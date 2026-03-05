@@ -495,9 +495,16 @@ async function doLogin() {
   if (!user) { err.textContent = 'Enter your callsign.'; return; }
   if (!pass) { err.textContent = 'Enter your password.'; return; }
   btn.disabled = true; btn.textContent = 'SIGNING IN…';
-  const { data, error } = await db.auth.signInWithPassword({ email: `${user}@ironfield.game`, password: pass });
+  const { data, error } = await db.auth.signInWithPassword({
+    email: `${user}@thedeck.game`, password: pass
+  });
   btn.disabled = false; btn.textContent = 'SIGN IN';
-  if (error) { err.textContent = 'Incorrect callsign or password.'; return; }
+  if (error) {
+    // Show the real error so we can diagnose — will clean up later
+    err.textContent = error.message;
+    console.error('Login error:', error);
+    return;
+  }
   currentUser = data.user;
   await loadProfile(currentUser.id);
   showScreen('scr-lobby');
@@ -515,7 +522,7 @@ async function doRegister() {
   if (pass.length < 6)            { err.textContent = 'Password must be 6+ characters.'; return; }
   if (pass !== conf)              { err.textContent = 'Passwords do not match.'; return; }
   btn.disabled = true; btn.textContent = 'CREATING…';
-  const { data, error } = await db.auth.signUp({ email: `${user}@ironfield.game`, password: pass });
+  const { data, error } = await db.auth.signUp({ email: `${user}@thedeck.game`, password: pass });
   if (error) {
     btn.disabled = false; btn.textContent = 'CREATE ACCOUNT';
     err.textContent = error.message.includes('already') ? 'That callsign is taken.' : error.message;
