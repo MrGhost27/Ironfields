@@ -1,0 +1,1912 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IRONFIELD</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --ph:#00ff88;--phd:#00994d;--phf:#001a0d;
+    --red:#ff4444;--rdd:#6a1a1a;
+    --amb:#ffaa00;--blu:#88aaff;
+    --bg:#060a07;--pan:#08100a;--bdr:#14221a;
+    --txt:#00cc66;--dim:#005522;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{
+    background:var(--bg);color:var(--txt);
+    font-family:'Share Tech Mono',monospace;
+    height:100vh;display:flex;flex-direction:column;
+    overflow:hidden;cursor:crosshair;
+  }
+  body::before{
+    content:'';position:fixed;inset:0;pointer-events:none;z-index:900;
+    background:repeating-linear-gradient(0deg,transparent,transparent 2px,
+      rgba(0,0,0,0.055) 2px,rgba(0,0,0,0.055) 4px);
+  }
+  body::after{
+    content:'';position:fixed;inset:0;pointer-events:none;z-index:901;
+    background:radial-gradient(ellipse at 50% 48%,transparent 50%,rgba(0,0,0,0.72) 100%);
+  }
+  header{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:7px 16px;border-bottom:1px solid var(--bdr);
+    background:var(--pan);flex-shrink:0;z-index:10;
+  }
+  .logo{
+    font-family:'Orbitron',sans-serif;font-weight:900;font-size:17px;
+    letter-spacing:6px;color:var(--ph);
+    text-shadow:0 0 14px var(--ph),0 0 30px rgba(0,255,136,.22);
+  }
+  .logo em{color:var(--phd);font-style:normal;font-weight:400;}
+  .hstat{display:flex;gap:22px;font-size:10px;color:var(--dim);}
+  .hstat b{color:var(--ph);font-weight:normal;}
+  .blink{animation:bl 1.1s step-end infinite;}
+  @keyframes bl{50%{opacity:0;}}
+  .main{display:flex;flex:1;overflow:hidden;}
+  .side{
+    width:200px;background:var(--pan);border-right:1px solid var(--bdr);
+    display:flex;flex-direction:column;flex-shrink:0;
+  }
+  .ptitle{
+    font-family:'Orbitron',sans-serif;font-size:8px;letter-spacing:3px;
+    color:var(--dim);padding:9px 12px 6px;border-bottom:1px solid var(--bdr);
+  }
+  .mlist{padding:6px;display:flex;flex-direction:column;gap:4px;overflow-y:auto;flex:1;}
+  .mc{border:1px solid var(--bdr);padding:7px 9px;cursor:pointer;
+      transition:border-color .12s,background .12s;position:relative;}
+  .mc::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;}
+  .mc.p1::before{background:var(--ph);} .mc.p2::before{background:var(--red);}
+  .mc.sel{border-color:var(--ph);background:rgba(0,255,136,.05);}
+  .mc.p2.sel{border-color:var(--red);background:rgba(255,68,68,.05);}
+  .mn{font-family:'Orbitron',sans-serif;font-size:10px;font-weight:700;
+      letter-spacing:2px;margin-bottom:3px;}
+  .mc.p1 .mn{color:var(--ph);} .mc.p2 .mn{color:var(--red);}
+  .ms{font-size:9px;color:var(--dim);line-height:1.75;}
+  .ms .v{color:var(--txt);}
+  .sr{display:flex;justify-content:space-between;}
+  .carea{flex:1;position:relative;overflow:hidden;}
+  canvas{display:block;}
+  .tbar{
+    position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
+    display:flex;gap:3px;background:rgba(6,10,7,.95);
+    border:1px solid var(--bdr);padding:7px;z-index:10;
+    backdrop-filter:blur(8px);
+  }
+  .tb{
+    font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:1px;
+    color:var(--dim);background:transparent;border:1px solid var(--bdr);
+    padding:5px 11px;cursor:pointer;transition:all .12s;
+  }
+  .tb:hover{color:var(--ph);border-color:var(--phd);}
+  .tb.on{color:var(--ph);border-color:var(--ph);background:rgba(0,255,136,.07);
+         box-shadow:0 0 8px rgba(0,255,136,.15);}
+  .tb.amb{color:var(--amb);border-color:#4a3000;}
+  .tb.amb:hover,.tb.amb.on{border-color:var(--amb);background:rgba(255,170,0,.07);}
+  .tb.los{color:var(--blu);border-color:#1e2244;}
+  .tb.los:hover,.tb.los.on{border-color:var(--blu);background:rgba(136,170,255,.07);}
+  .rpan{
+    width:192px;background:var(--pan);border-left:1px solid var(--bdr);
+    flex-shrink:0;display:flex;flex-direction:column;overflow:hidden;
+  }
+  .ib{padding:8px 11px;border-bottom:1px solid var(--bdr);}
+  .ib .lbl{font-size:8px;color:var(--dim);letter-spacing:2px;margin-bottom:3px;}
+  .ib .val{font-size:12px;color:var(--ph);}
+  .ib .val.r{color:var(--red);}
+  .coord{font-size:10px;color:var(--phd);}
+  .fdisp{
+    font-family:'Orbitron',monospace;font-size:28px;color:var(--amb);
+    text-align:center;padding:3px 0;text-shadow:0 0 12px rgba(255,170,0,.4);
+  }
+  .logarea{flex:1;overflow-y:auto;padding:6px;}
+  .le{font-size:9px;color:var(--dim);padding:2px 0;
+      border-bottom:1px solid rgba(255,255,255,.02);line-height:1.5;}
+  .le .ts{color:var(--phf);margin-right:4px;}
+  .le.ok{color:var(--phd);} .le.bad{color:var(--rdd);}
+  .tip{
+    position:absolute;background:rgba(4,8,5,.97);border:1px solid var(--bdr);
+    padding:3px 8px;font-size:9px;color:var(--dim);
+    pointer-events:none;z-index:50;display:none;white-space:nowrap;
+  }
+  .wheel-wrap{padding:8px 12px;border-bottom:1px solid var(--bdr);
+              display:flex;justify-content:center;}
+  .move-hint{font-size:9px;color:var(--amb);text-align:center;
+             padding:4px 8px;border-bottom:1px solid var(--bdr);min-height:28px;}
+  /* MP bar */
+  .mpbar-wrap{padding:8px 11px;border-bottom:1px solid var(--bdr);}
+  .mpbar-wrap .lbl{font-size:8px;color:var(--dim);letter-spacing:2px;margin-bottom:5px;}
+  .mpbar-row{display:flex;align-items:center;gap:7px;}
+  .mpbar-track{flex:1;height:8px;background:rgba(0,255,136,0.08);
+               border:1px solid var(--bdr);position:relative;overflow:hidden;}
+  .mpbar-fill{height:100%;transition:width .15s;position:absolute;left:0;top:0;}
+  .mpbar-fill.ok {background:var(--ph);}
+  .mpbar-fill.warn{background:var(--amb);}
+  .mpbar-fill.over{background:var(--red);}
+  .mpbar-nums{font-size:10px;color:var(--ph);white-space:nowrap;min-width:52px;text-align:right;}
+  .mpbar-nums.warn{color:var(--amb);} .mpbar-nums.over{color:var(--red);}
+  /* roster MP pip row */
+  .mp-pips{display:flex;gap:2px;flex-wrap:wrap;margin-top:3px;}
+  .pip{width:5px;height:5px;border:1px solid var(--dim);}
+  .pip.used{background:var(--dim);}
+  .pip.free{background:var(--ph);}
+  .pip.cost{background:var(--amb);}
+  .pip.over{background:var(--red);}
+
+  /* ── AUTH / LOBBY / WAITING OVERLAY SCREENS ─────────────────── */
+  .screen-overlay{
+    position:fixed;inset:0;z-index:500;
+    background:var(--bg);display:flex;flex-direction:column;
+    align-items:center;justify-content:center;
+  }
+  .screen-overlay.hidden{display:none;}
+  .auth-box{
+    background:var(--pan);border:1px solid var(--bdr);
+    padding:32px 36px;width:320px;display:flex;flex-direction:column;gap:14px;
+  }
+  .auth-box h2{
+    font-family:'Orbitron',sans-serif;font-size:13px;letter-spacing:4px;
+    color:var(--ph);margin-bottom:4px;
+  }
+  .auth-box label{font-size:9px;color:var(--dim);letter-spacing:2px;}
+  .auth-box input{
+    width:100%;background:rgba(0,255,136,.04);border:1px solid var(--bdr);
+    color:var(--txt);font-family:'Share Tech Mono',monospace;font-size:12px;
+    padding:7px 10px;outline:none;
+  }
+  .auth-box input:focus{border-color:var(--phd);}
+  .auth-btn{
+    font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:3px;
+    background:transparent;border:1px solid var(--ph);color:var(--ph);
+    padding:9px;cursor:pointer;transition:all .12s;margin-top:4px;
+  }
+  .auth-btn:hover{background:rgba(0,255,136,.09);}
+  .auth-btn:disabled{opacity:.4;cursor:default;}
+  .auth-btn.sec{border-color:var(--bdr);color:var(--dim);}
+  .auth-btn.sec:hover{color:var(--txt);border-color:var(--phd);}
+  .auth-btn.danger{border-color:#441111;color:#cc4444;}
+  .auth-btn.danger:hover{background:rgba(255,68,68,.09);}
+  .auth-err{font-size:9px;color:#ff6666;min-height:14px;}
+  .auth-link{font-size:9px;color:var(--dim);cursor:pointer;text-decoration:underline;}
+  .auth-link:hover{color:var(--ph);}
+
+  /* lobby */
+  .lobby-box{
+    background:var(--pan);border:1px solid var(--bdr);
+    padding:28px 32px;width:380px;display:flex;flex-direction:column;gap:16px;
+  }
+  .lobby-box h2{
+    font-family:'Orbitron',sans-serif;font-size:13px;letter-spacing:4px;color:var(--ph);
+  }
+  .lobby-section{display:flex;flex-direction:column;gap:8px;}
+  .lobby-section .lbl{font-size:8px;color:var(--dim);letter-spacing:3px;}
+  .lobby-divider{border:none;border-top:1px solid var(--bdr);margin:4px 0;}
+
+  /* waiting room */
+  .wait-box{
+    background:var(--pan);border:1px solid var(--bdr);
+    padding:28px 32px;width:400px;display:flex;flex-direction:column;gap:14px;
+  }
+  .wait-box h2{
+    font-family:'Orbitron',sans-serif;font-size:12px;letter-spacing:4px;color:var(--ph);
+  }
+  .seat-row{
+    display:flex;align-items:center;gap:10px;
+    border:1px solid var(--bdr);padding:10px 12px;
+  }
+  .seat-row.mine{border-color:var(--phd);background:rgba(0,255,136,.04);}
+  .seat-row.taken{border-color:#1a2a1a;}
+  .seat-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+  .seat-name{flex:1;font-size:11px;color:var(--txt);}
+  .seat-badge{
+    font-size:8px;letter-spacing:2px;padding:2px 6px;border:1px solid;
+  }
+  .seat-badge.you{color:var(--amb);border-color:var(--amb);}
+  .seat-badge.joined{color:var(--ph);border-color:var(--phd);}
+  .seat-badge.empty{color:var(--dim);border-color:var(--bdr);}
+  .seat-btn{
+    font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:1px;
+    background:transparent;border:1px solid var(--phd);color:var(--phd);
+    padding:4px 10px;cursor:pointer;transition:all .12s;
+  }
+  .seat-btn:hover{color:var(--ph);border-color:var(--ph);}
+  .seat-btn.rel{border-color:#441111;color:#884444;}
+  .seat-btn.rel:hover{color:#ff4444;border-color:#ff4444;}
+  .code-display{
+    font-family:'Orbitron',sans-serif;font-size:28px;letter-spacing:8px;
+    color:var(--amb);text-align:center;padding:8px;border:1px solid #332200;
+    background:rgba(255,170,0,.04);cursor:pointer;
+    text-shadow:0 0 12px rgba(255,170,0,.3);
+  }
+  .code-display:hover{background:rgba(255,170,0,.08);}
+  .wait-status{font-size:9px;color:var(--dim);text-align:center;min-height:14px;}
+  .wait-status.ok{color:var(--ph);}
+  .sync-row{
+    position:fixed;top:10px;right:14px;font-size:9px;color:var(--dim);
+    display:flex;align-items:center;gap:5px;z-index:600;
+    opacity:0;transition:opacity .2s;
+  }
+  .sync-row.vis{opacity:1;}
+  .sync-dot{width:6px;height:6px;border-radius:50%;background:var(--dim);}
+  .sync-dot.saving{background:var(--amb);animation:pulse .6s infinite;}
+  .sync-dot.saved{background:var(--ph);}
+  @keyframes pulse{50%{opacity:.3;}}
+
+  /* user bar in header */
+  .userbar{display:flex;align-items:center;gap:10px;font-size:9px;color:var(--dim);}
+  .userbar b{color:var(--ph);font-weight:normal;}
+
+  /* plan submission bar */
+  .planbar{
+    position:absolute;top:10px;left:50%;transform:translateX(-50%);
+    background:rgba(6,10,7,.95);border:1px solid var(--bdr);
+    padding:6px 14px;display:flex;align-items:center;gap:12px;
+    z-index:20;font-size:9px;color:var(--dim);
+    backdrop-filter:blur(8px);
+  }
+  .planbar b{color:var(--ph);}
+  .planbar.enemy-waiting b.enem{color:var(--amb);}
+  .plan-btn{
+    font-family:'Orbitron',sans-serif;font-size:8px;letter-spacing:2px;
+    background:transparent;border:1px solid var(--phd);color:var(--phd);
+    padding:5px 12px;cursor:pointer;transition:all .12s;
+  }
+  .plan-btn:hover{color:var(--ph);border-color:var(--ph);background:rgba(0,255,136,.07);}
+  .plan-btn:disabled{opacity:.35;cursor:default;}
+  .plan-btn.submitted{border-color:var(--ph);color:var(--ph);background:rgba(0,255,136,.07);}
+  .plan-btn.recall{border-color:#441111;color:#884444;}
+  .plan-btn.recall:hover{color:#ff4444;border-color:#ff4444;background:rgba(255,68,68,.07);}
+</style>
+</head>
+<body>
+<!-- sync indicator -->
+<div class="sync-row" id="syncRow">
+  <div class="sync-dot" id="syncDot"></div>
+  <span id="syncTxt">Saving…</span>
+</div>
+
+<!-- ── AUTH SCREEN ─────────────────────────────────────────────── -->
+<div class="screen-overlay" id="scr-auth">
+  <div class="auth-box" id="auth-login">
+    <h2>// IRONFIELD</h2>
+    <div>
+      <label>CALLSIGN</label>
+      <input id="au-user" type="text" autocomplete="username" placeholder="your callsign">
+    </div>
+    <div>
+      <label>PASSWORD</label>
+      <input id="au-pass" type="password" autocomplete="current-password" placeholder="••••••••">
+    </div>
+    <div class="auth-err" id="au-err"></div>
+    <button class="auth-btn" id="au-btn" onclick="doLogin()">SIGN IN</button>
+    <span class="auth-link" onclick="showAuthPanel('register')">No account? Create one</span>
+  </div>
+  <div class="auth-box hidden" id="auth-register">
+    <h2>// CREATE ACCOUNT</h2>
+    <div>
+      <label>CALLSIGN (3+ chars, no spaces)</label>
+      <input id="rg-user" type="text" autocomplete="username" placeholder="your callsign">
+    </div>
+    <div>
+      <label>PASSWORD (6+ chars)</label>
+      <input id="rg-pass" type="password" autocomplete="new-password" placeholder="••••••••">
+    </div>
+    <div>
+      <label>CONFIRM PASSWORD</label>
+      <input id="rg-conf" type="password" autocomplete="new-password" placeholder="••••••••">
+    </div>
+    <div class="auth-err" id="rg-err"></div>
+    <button class="auth-btn" id="rg-btn" onclick="doRegister()">CREATE ACCOUNT</button>
+    <span class="auth-link" onclick="showAuthPanel('login')">Already have an account</span>
+  </div>
+</div>
+
+<!-- ── LOBBY SCREEN ────────────────────────────────────────────── -->
+<div class="screen-overlay hidden" id="scr-lobby">
+  <div class="lobby-box">
+    <h2>// IRONFIELD  ·  LOBBY</h2>
+    <div class="lobby-section">
+      <div class="lbl">CREATE NEW MATCH</div>
+      <button class="auth-btn" onclick="doCreateGame()">CREATE GAME</button>
+    </div>
+    <hr class="lobby-divider">
+    <div class="lobby-section">
+      <div class="lbl">JOIN WITH CODE</div>
+      <input id="join-code-input" type="text" maxlength="6"
+             style="text-transform:uppercase;letter-spacing:4px;font-size:16px;text-align:center;"
+             placeholder="A B C 1 2 3">
+      <button class="auth-btn" onclick="doJoinGame()">JOIN GAME</button>
+      <div class="auth-err" id="join-err"></div>
+    </div>
+    <hr class="lobby-divider">
+    <button class="auth-btn sec" onclick="doSignOut()">SIGN OUT</button>
+  </div>
+</div>
+
+<!-- ── WAITING ROOM SCREEN ────────────────────────────────────── -->
+<div class="screen-overlay hidden" id="scr-waiting">
+  <div class="wait-box">
+    <h2 id="wait-title">// WAITING FOR OPPONENT</h2>
+    <div class="lbl">JOIN CODE  ·  CLICK TO COPY</div>
+    <div class="code-display" id="code-display" onclick="copyCode()">——————</div>
+    <div id="seat-rows" style="display:flex;flex-direction:column;gap:6px;"></div>
+    <div class="wait-status" id="wait-status"></div>
+    <button class="auth-btn" id="btn-start" onclick="doStartGame()" disabled>START GAME</button>
+    <button class="auth-btn sec" onclick="leaveWaiting()">LEAVE LOBBY</button>
+  </div>
+</div>
+
+<header>
+  <div class="logo">IRON<em>FIELD</em></div>
+  <div class="hstat">
+    <div>TURN <b id="hTurn">—</b></div>
+    <div>MODE <b id="hmode">SELECT</b></div>
+    <div>FACING <b id="hfacing">—</b></div>
+    <div id="hPhase"><span class="blink">●</span> <b>PLANNING</b></div>
+  </div>
+  <div class="userbar">
+    <span>PILOT: <b id="hUser">—</b></span>
+    <button class="auth-btn sec" style="padding:3px 8px;font-size:8px;" onclick="returnToLobby()">LOBBY</button>
+  </div>
+</header>
+
+<div class="main">
+  <div class="side">
+    <div class="ptitle">// LANCE ROSTER</div>
+    <div class="mlist" id="mlist"></div>
+  </div>
+
+  <div class="carea" id="carea">
+    <canvas id="grid"></canvas>
+    <div class="tip" id="tip"></div>
+    <!-- WeGo plan bar -->
+    <div class="planbar" id="planbar">
+      <span>YOUR PLAN: <b id="planStatus">not submitted</b></span>
+      <span>OPPONENT: <b class="enem" id="enemStatus">waiting</b></span>
+      <button class="plan-btn" id="btnSubmit" onclick="submitPlan()">SUBMIT PLAN</button>
+      <button class="plan-btn recall hidden" id="btnRecall" onclick="recallPlan()">RECALL</button>
+    </div>
+    <div class="tbar">
+      <button class="tb on"  id="b-sel"  onclick="setMode('select')">[ SELECT ]</button>
+      <button class="tb"     id="b-move" onclick="setMode('move')">[ MOVE ]</button>
+      <button class="tb amb" id="b-rot"  onclick="setMode('rotate')">[ ROTATE ]</button>
+      <button class="tb los" id="b-los"  onclick="setMode('los')">[ LOS ]</button>
+      <button class="tb"     id="b-tg"   onclick="togFlag('tri')">[ TRI GRID ]</button>
+      <button class="tb on"  id="b-out"  onclick="togFlag('out')">[ OUTLINE ]</button>
+      <button class="tb on"  id="b-half" onclick="togFlag('half')">[ HALF TRIS ]</button>
+      <button class="tb on"  id="b-vx"   onclick="togFlag('verts')">[ VERTICES ]</button>
+      <button class="tb" style="color:#88aaff;border-color:#1e2244;" onclick="newTurn()">[ NEW TURN ]</button>
+    </div>
+  </div>
+
+  <div class="rpan">
+    <div class="ptitle">// UNIT DATA</div>
+    <div class="ib"><div class="lbl">SELECTED</div><div class="val" id="rN">—</div></div>
+    <div class="ib"><div class="lbl">ANCHOR</div><div class="coord" id="rPos">—</div></div>
+    <div class="ib"><div class="lbl">FACING</div><div class="fdisp" id="rF">—°</div></div>
+    <div class="ib"><div class="lbl">COVERAGE</div><div class="coord" id="rC">full:— half:—</div></div>
+    <div class="mpbar-wrap">
+      <div class="lbl">MOVEMENT POINTS</div>
+      <div class="mpbar-row">
+        <div class="mpbar-track"><div class="mpbar-fill ok" id="mpFill" style="width:0%"></div></div>
+        <div class="mpbar-nums" id="mpNums">—</div>
+      </div>
+    </div>
+    <div class="ib"><div class="lbl">CURSOR</div><div class="coord" id="rCur">—</div></div>
+    <div class="wheel-wrap"><canvas id="wheel" width="76" height="76"></canvas></div>
+    <div class="move-hint" id="mhint">Select a unit to begin</div>
+    <div class="ptitle">// LOG</div>
+    <div class="logarea" id="log"></div>
+  </div>
+</div>
+
+<script>
+// ================================================================
+//  IRONFIELD  Phase 2 — Supabase multiplayer
+//
+//  Auth:     Supabase email/password (username@ironfield.game trick)
+//  Lobby:    Create game / join by code
+//  Waiting:  2-seat claim system, realtime sync
+//  WeGo:     Both players submit turn plans → simultaneous resolution
+//  Realtime: postgres_changes on ironfield_games + ironfield_turn_plans
+// ================================================================
+
+// ── SUPABASE ─────────────────────────────────────────────────────
+const SUPABASE_URL  = 'https://ffztxyeevdqlhvxzcopn.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmenR4eWVldmRxbGh2eHpjb3BuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyNzgxMTMsImV4cCI6MjA4Nzg1NDExM30.EdA8cwETE00YFENj-CN93ScKMFN4yfNNG63BentHiQ4';
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+// ── MULTIPLAYER STATE ─────────────────────────────────────────────
+let currentUser    = null;
+let currentProfile = null;
+let gameId         = null;
+let joinCode       = null;
+let myPlayer       = null;   // 1 or 2
+let isHost         = false;
+let realtimeChan   = null;
+let myPlanId       = null;   // id of my submitted turn_plan row
+let myPlanSubmitted = false;
+let enemyPlanSubmitted = false;
+let syncTimer      = null;
+
+// ── SCREEN HELPERS ────────────────────────────────────────────────
+function showScreen(id) {
+  ['scr-auth','scr-lobby','scr-waiting'].forEach(s => {
+    const el = document.getElementById(s);
+    if (el) el.classList.toggle('hidden', s !== id);
+  });
+}
+function showAuthPanel(which) {
+  document.getElementById('auth-login').classList.toggle('hidden', which !== 'login');
+  document.getElementById('auth-register').classList.toggle('hidden', which !== 'register');
+}
+function showSync(msg) {
+  clearTimeout(syncTimer);
+  const row = document.getElementById('syncRow');
+  document.getElementById('syncDot').className = 'sync-dot saving';
+  document.getElementById('syncTxt').textContent = msg;
+  row.classList.add('vis');
+}
+function showSynced() {
+  document.getElementById('syncDot').className = 'sync-dot saved';
+  document.getElementById('syncTxt').textContent = 'Saved';
+  syncTimer = setTimeout(() => document.getElementById('syncRow').classList.remove('vis'), 2000);
+}
+function showSyncErr() {
+  document.getElementById('syncDot').className = 'sync-dot';
+  document.getElementById('syncTxt').textContent = 'Error';
+  document.getElementById('syncRow').classList.add('vis');
+}
+
+// ── AUTH ──────────────────────────────────────────────────────────
+async function initApp() {
+  const { data: { session } } = await db.auth.getSession();
+  if (session) {
+    currentUser = session.user;
+    await loadProfile(currentUser.id);
+    const saved = localStorage.getItem('ironfield_game_' + currentUser.id);
+    if (saved) {
+      const ok = await tryRejoin(saved);
+      if (ok) return;
+      localStorage.removeItem('ironfield_game_' + currentUser.id);
+    }
+    showScreen('scr-lobby');
+  } else {
+    showScreen('scr-auth');
+  }
+}
+
+async function loadProfile(uid) {
+  const { data } = await db.from('profiles').select('*').eq('id', uid).single();
+  if (data) {
+    currentProfile = data;
+    document.getElementById('hUser').textContent = data.username;
+  }
+}
+
+async function doLogin() {
+  const user = document.getElementById('au-user').value.trim().toLowerCase();
+  const pass = document.getElementById('au-pass').value;
+  const err  = document.getElementById('au-err');
+  const btn  = document.getElementById('au-btn');
+  err.textContent = '';
+  if (!user) { err.textContent = 'Enter your callsign.'; return; }
+  if (!pass) { err.textContent = 'Enter your password.'; return; }
+  btn.disabled = true; btn.textContent = 'SIGNING IN…';
+  const { data, error } = await db.auth.signInWithPassword({ email: `${user}@ironfield.game`, password: pass });
+  btn.disabled = false; btn.textContent = 'SIGN IN';
+  if (error) { err.textContent = 'Incorrect callsign or password.'; return; }
+  currentUser = data.user;
+  await loadProfile(currentUser.id);
+  showScreen('scr-lobby');
+}
+
+async function doRegister() {
+  const user = document.getElementById('rg-user').value.trim().toLowerCase();
+  const pass = document.getElementById('rg-pass').value;
+  const conf = document.getElementById('rg-conf').value;
+  const err  = document.getElementById('rg-err');
+  const btn  = document.getElementById('rg-btn');
+  err.textContent = '';
+  if (!user || user.length < 3)  { err.textContent = 'Callsign must be 3+ characters.'; return; }
+  if (/\s/.test(user))            { err.textContent = 'No spaces in callsign.'; return; }
+  if (pass.length < 6)            { err.textContent = 'Password must be 6+ characters.'; return; }
+  if (pass !== conf)              { err.textContent = 'Passwords do not match.'; return; }
+  btn.disabled = true; btn.textContent = 'CREATING…';
+  const { data, error } = await db.auth.signUp({ email: `${user}@ironfield.game`, password: pass });
+  if (error) {
+    btn.disabled = false; btn.textContent = 'CREATE ACCOUNT';
+    err.textContent = error.message.includes('already') ? 'That callsign is taken.' : error.message;
+    return;
+  }
+  const { error: pe } = await db.from('profiles').insert({ id: data.user.id, username: user });
+  btn.disabled = false; btn.textContent = 'CREATE ACCOUNT';
+  if (pe) { err.textContent = 'Callsign taken.'; await db.auth.signOut(); return; }
+  currentUser = data.user;
+  currentProfile = { id: data.user.id, username: user };
+  document.getElementById('hUser').textContent = user;
+  showScreen('scr-lobby');
+}
+
+async function doSignOut() {
+  if (realtimeChan) { await db.removeChannel(realtimeChan); realtimeChan = null; }
+  await db.auth.signOut();
+  resetMultiState();
+  showScreen('scr-auth');
+  showAuthPanel('login');
+}
+
+// ── LOBBY ─────────────────────────────────────────────────────────
+function generateCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({length:6}, () => chars[Math.floor(Math.random()*chars.length)]).join('');
+}
+
+async function doCreateGame() {
+  showSync('Creating game…');
+  const code    = generateCode();
+  const initState = buildInitialState();
+  const { data, error } = await db.from('ironfield_games')
+    .insert({ join_code: code, status: 'waiting', phase: 'planning',
+              turn_number: 1, state: initState })
+    .select().single();
+  if (error) { showSyncErr(); addLog('Could not create game: ' + error.message, 'bad'); return; }
+  showSynced();
+  gameId   = data.id;
+  joinCode = code;
+  isHost   = true;
+  localStorage.setItem('ironfield_game_' + currentUser.id, gameId);
+  subscribeToGame();
+  openWaiting();
+}
+
+async function doJoinGame() {
+  const code = document.getElementById('join-code-input').value.trim().toUpperCase();
+  const err  = document.getElementById('join-err');
+  err.textContent = '';
+  if (code.length < 4) { err.textContent = 'Enter a join code.'; return; }
+  const { data, error } = await db.from('ironfield_games')
+    .select('*').eq('join_code', code).in('status', ['waiting','active']).single();
+  if (error || !data) { err.textContent = 'Game not found. Check the code.'; return; }
+  gameId   = data.id;
+  joinCode = data.join_code;
+  isHost   = false;
+  localStorage.setItem('ironfield_game_' + currentUser.id, gameId);
+  subscribeToGame();
+  if (data.status === 'active') {
+    loadStateFromDB(data);
+    enterGame();
+    return;
+  }
+  openWaiting();
+}
+
+// ── WAITING ROOM ──────────────────────────────────────────────────
+function openWaiting() {
+  document.getElementById('code-display').textContent = joinCode;
+  document.getElementById('wait-title').textContent =
+    isHost ? '// WAITING FOR OPPONENT' : '// JOINED — WAITING TO START';
+  document.getElementById('btn-start').style.display = isHost ? 'block' : 'none';
+  renderWaiting();
+  showScreen('scr-waiting');
+}
+
+async function renderWaiting() {
+  const { data: g } = await db.from('ironfield_games').select('*').eq('id', gameId).single();
+  if (!g) return;
+
+  const p1name = g.p1_id ? await getUsername(g.p1_id) : null;
+  const p2name = g.p2_id ? await getUsername(g.p2_id) : null;
+
+  const mine = currentUser.id;
+  const iAm1 = g.p1_id === mine, iAm2 = g.p2_id === mine;
+  myPlayer = iAm1 ? 1 : iAm2 ? 2 : null;
+
+  const makeRow = (slot, pid, name, color) => {
+    const isMe   = pid === mine;
+    const isFree = !pid;
+    let badge = isFree
+      ? `<span class="seat-badge empty">EMPTY</span>`
+      : isMe
+        ? `<span class="seat-badge you">YOU</span>`
+        : `<span class="seat-badge joined">JOINED</span>`;
+    let btn = isFree
+      ? `<button class="seat-btn" onclick="claimSeat(${slot})">CLAIM</button>`
+      : isMe
+        ? `<button class="seat-btn rel" onclick="releaseSeat()">RELEASE</button>`
+        : '';
+    return `<div class="seat-row ${isMe?'mine':pid?'taken':''}">
+      <div class="seat-dot" style="background:${color}"></div>
+      <span class="seat-name">PLAYER ${slot}${name ? ' · '+name : ''}</span>
+      ${badge} ${btn}
+    </div>`;
+  };
+
+  document.getElementById('seat-rows').innerHTML =
+    makeRow(1, g.p1_id, p1name, 'var(--ph)') +
+    makeRow(2, g.p2_id, p2name, 'var(--red)');
+
+  const bothIn = g.p1_id && g.p2_id;
+  const canStart = isHost && bothIn && myPlayer !== null;
+  const btn = document.getElementById('btn-start');
+  btn.disabled = !canStart;
+  document.getElementById('wait-status').textContent = bothIn
+    ? (isHost ? 'Both pilots ready. You can start!' : 'Both pilots ready. Waiting for host…')
+    : 'Waiting for both seats to be claimed…';
+  document.getElementById('wait-status').className = 'wait-status' + (bothIn ? ' ok' : '');
+}
+
+async function getUsername(uid) {
+  const { data } = await db.from('profiles').select('username').eq('id', uid).single();
+  return data?.username || '—';
+}
+
+async function claimSeat(slot) {
+  showSync('Claiming seat…');
+  const field = slot === 1 ? 'p1_id' : 'p2_id';
+  const other = slot === 1 ? 'p2_id' : 'p1_id';
+  // Check other slot isn't already us
+  const { data: g } = await db.from('ironfield_games').select('p1_id,p2_id').eq('id', gameId).single();
+  if (g && g[other] === currentUser.id) {
+    showSyncErr(); return; // already in the other seat
+  }
+  // Release any existing seat
+  const update1 = {}; update1[g?.p1_id === currentUser.id ? 'p1_id' : g?.p2_id === currentUser.id ? 'p2_id' : '_'] = null;
+  // Just overwrite both our possible seats in one update
+  const clearMe = {};
+  if (g?.p1_id === currentUser.id) clearMe.p1_id = null;
+  if (g?.p2_id === currentUser.id) clearMe.p2_id = null;
+  if (Object.keys(clearMe).length) {
+    await db.from('ironfield_games').update(clearMe).eq('id', gameId);
+  }
+  // Claim target slot
+  const claim = {}; claim[field] = currentUser.id;
+  const { error } = await db.from('ironfield_games').update(claim).eq('id', gameId).is(field, null);
+  if (error) { showSyncErr(); addLog('Seat taken or error: ' + error.message, 'bad'); return; }
+  myPlayer = slot;
+  showSynced();
+  renderWaiting();
+}
+
+async function releaseSeat() {
+  showSync('Releasing…');
+  const clear = {};
+  if (myPlayer === 1) clear.p1_id = null;
+  if (myPlayer === 2) clear.p2_id = null;
+  await db.from('ironfield_games').update(clear).eq('id', gameId);
+  myPlayer = null;
+  showSynced();
+  renderWaiting();
+}
+
+function copyCode() {
+  navigator.clipboard.writeText(joinCode).then(() => {
+    document.getElementById('wait-status').textContent = 'Code copied!';
+    setTimeout(renderWaiting, 2000);
+  });
+}
+
+async function doStartGame() {
+  showSync('Starting…');
+  const initState = buildInitialState();
+  const { error } = await db.from('ironfield_games')
+    .update({ status: 'active', state: initState })
+    .eq('id', gameId);
+  if (error) { showSyncErr(); return; }
+  showSynced();
+  loadStateFromGame(initState);
+  enterGame();
+  await logEvent('start');
+}
+
+function leaveWaiting() {
+  if (realtimeChan) { db.removeChannel(realtimeChan); realtimeChan = null; }
+  releaseSeat().catch(()=>{});
+  resetMultiState();
+  showScreen('scr-lobby');
+}
+
+function returnToLobby() {
+  if (realtimeChan) { db.removeChannel(realtimeChan); realtimeChan = null; }
+  resetMultiState();
+  showScreen('scr-lobby');
+}
+
+// ── REALTIME ──────────────────────────────────────────────────────
+function subscribeToGame() {
+  if (realtimeChan) db.removeChannel(realtimeChan);
+  realtimeChan = db.channel(`ironfield-${gameId}`)
+    .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'ironfield_games', filter: `id=eq.${gameId}` },
+        onGameUpdate)
+    .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'ironfield_turn_plans', filter: `game_id=eq.${gameId}` },
+        onPlanUpdate)
+    .subscribe();
+}
+
+function onGameUpdate(payload) {
+  const g = payload.new;
+  document.getElementById('hTurn').textContent = g.turn_number;
+  if (g.status === 'active' && document.getElementById('scr-waiting') &&
+      !document.getElementById('scr-waiting').classList.contains('hidden')) {
+    // Other player started the game — enter for us too
+    loadStateFromGame(g.state);
+    enterGame();
+    return;
+  }
+  if (g.status === 'active') {
+    // Turn resolved by opponent — load new state
+    if (g.phase === 'planning') {
+      loadStateFromGame(g.state);
+      resetPlanUI();
+      addLog(`── TURN ${g.turn_number} BEGINS ──`, 'ok');
+    }
+  }
+  if (g.status === 'waiting') renderWaiting();
+}
+
+function onPlanUpdate(payload) {
+  checkBothPlansSubmitted();
+}
+
+async function checkBothPlansSubmitted() {
+  const { data: plans } = await db.from('ironfield_turn_plans')
+    .select('id, profile_id').eq('game_id', gameId).eq('turn_number', turnNumber);
+  if (!plans) return;
+
+  const myPlan    = plans.find(p => p.profile_id === currentUser.id);
+  const enemyPlan = plans.find(p => p.profile_id !== currentUser.id);
+
+  myPlanSubmitted    = !!myPlan;
+  enemyPlanSubmitted = !!enemyPlan;
+  updatePlanBar();
+
+  // If both submitted and I am the host (or lower player num), I resolve
+  if (myPlan && enemyPlan && isHost) {
+    await resolveTurn(plans);
+  }
+}
+
+// ── TURN PLAN SUBMISSION ──────────────────────────────────────────
+async function submitPlan() {
+  if (myPlanSubmitted) return;
+  showSync('Submitting plan…');
+
+  // Build plan from current mech state (positions/facings of my mechs)
+  const myMechs = mechs.filter(m => m.player === myPlayer);
+  const plan = {
+    submitted_at: new Date().toISOString(),
+    mech_orders: myMechs.map(m => ({
+      mech_id:      m.id,
+      wx:           m.wx,
+      wy:           m.wy,
+      final_facing: m.facing,
+      mp_spent:     m.mpSpent
+    }))
+  };
+
+  const { data, error } = await db.from('ironfield_turn_plans')
+    .upsert({ game_id: gameId, profile_id: currentUser.id,
+              turn_number: turnNumber, plan },
+             { onConflict: 'game_id,profile_id,turn_number' })
+    .select().single();
+
+  if (error) { showSyncErr(); addLog('Plan submission failed: ' + error.message, 'bad'); return; }
+  myPlanId        = data.id;
+  myPlanSubmitted = true;
+  showSynced();
+  await logEvent('plan_submitted');
+  updatePlanBar();
+  await checkBothPlansSubmitted();
+}
+
+async function recallPlan() {
+  if (!myPlanSubmitted) return;
+  showSync('Recalling plan…');
+  await db.from('ironfield_turn_plans')
+    .delete().eq('game_id', gameId).eq('profile_id', currentUser.id).eq('turn_number', turnNumber);
+  myPlanId        = null;
+  myPlanSubmitted = false;
+  showSynced();
+  updatePlanBar();
+}
+
+// ── WEGO RESOLUTION ───────────────────────────────────────────────
+// Called by host only when both plans are in.
+async function resolveTurn(plans) {
+  addLog(`── RESOLVING TURN ${turnNumber} ──`, 'ok');
+
+  // Apply each plan to the mech state
+  plans.forEach(row => {
+    const orders = row.plan?.mech_orders || [];
+    orders.forEach(order => {
+      const m = mechs.find(x => x.id === order.mech_id);
+      if (!m) return;
+      m.wx      = order.wx;
+      m.wy      = order.wy;
+      m.facing  = order.final_facing;
+      m.mpSpent = 0;  // reset for next turn
+    });
+  });
+
+  // Increment turn, reset phase, write new state to DB
+  turnNumber++;
+  const newState = captureState();
+  showSync('Resolving…');
+  const { error } = await db.from('ironfield_games')
+    .update({ state: newState, turn_number: turnNumber, phase: 'planning' })
+    .eq('id', gameId);
+  if (error) { showSyncErr(); return; }
+  showSynced();
+
+  // Clean up old plans
+  await db.from('ironfield_turn_plans')
+    .delete().eq('game_id', gameId).eq('turn_number', turnNumber - 1);
+
+  await logEvent('turn_resolved');
+  resetPlanUI();
+  addLog(`── TURN ${turnNumber} BEGINS ──`, 'ok');
+  buildRoster(); updatePanel(); draw();
+}
+
+function updatePlanBar() {
+  const bar  = document.getElementById('planbar');
+  const ps   = document.getElementById('planStatus');
+  const es   = document.getElementById('enemStatus');
+  const bsub = document.getElementById('btnSubmit');
+  const brec = document.getElementById('btnRecall');
+
+  ps.textContent = myPlanSubmitted    ? 'SUBMITTED ✓' : 'not submitted';
+  es.textContent = enemyPlanSubmitted ? 'SUBMITTED ✓' : 'waiting…';
+  bsub.className = 'plan-btn' + (myPlanSubmitted ? ' submitted' : '');
+  bsub.disabled  = myPlanSubmitted;
+  brec.className = 'plan-btn recall' + (myPlanSubmitted ? '' : ' hidden');
+  bar.className  = 'planbar' + (enemyPlanSubmitted ? ' enemy-waiting' : '');
+}
+
+function resetPlanUI() {
+  myPlanId           = null;
+  myPlanSubmitted    = false;
+  enemyPlanSubmitted = false;
+  mechs.forEach(m => m.mpSpent = 0);
+  updatePlanBar();
+}
+
+// ── GAME STATE SERIALISATION ──────────────────────────────────────
+function buildInitialState() {
+  placeMechsDefault();
+  return captureState();
+}
+
+function captureState() {
+  return {
+    mechs: mechs.map(m => ({
+      id: m.id, player: m.player, name: m.name, cls: m.cls,
+      facing: m.facing, wx: m.wx, wy: m.wy, mpSpent: 0
+    })),
+    turn: turnNumber
+  };
+}
+
+function loadStateFromGame(state) {
+  if (!state || !state.mechs) return;
+  state.mechs.forEach(saved => {
+    const m = mechs.find(x => x.id === saved.id);
+    if (!m) return;
+    m.wx = saved.wx; m.wy = saved.wy;
+    m.facing = saved.facing; m.mpSpent = saved.mpSpent ?? 0;
+  });
+  if (state.turn) turnNumber = state.turn;
+}
+
+function loadStateFromDB(gameRow) {
+  if (gameRow.state) loadStateFromGame(gameRow.state);
+  if (gameRow.turn_number) turnNumber = gameRow.turn_number;
+  myPlayer = gameRow.p1_id === currentUser.id ? 1
+           : gameRow.p2_id === currentUser.id ? 2 : null;
+}
+
+// ── ENTER GAME ────────────────────────────────────────────────────
+function enterGame() {
+  showScreen(null);  // hide all overlays
+  document.getElementById('hTurn').textContent = turnNumber;
+  resetPlanUI();
+  updatePlanBar();
+  buildRoster(); updatePanel();
+  if (ox === 0 && oy === 0) resize(); else draw();
+  addLog(`Game joined as Player ${myPlayer}`, 'ok');
+  addLog('Plan your moves then click SUBMIT PLAN');
+  checkBothPlansSubmitted();
+}
+
+// ── REJOIN ────────────────────────────────────────────────────────
+async function tryRejoin(savedId) {
+  try {
+    const { data: g, error } = await db.from('ironfield_games')
+      .select('*').eq('id', savedId).in('status', ['waiting','active']).single();
+    if (error || !g) return false;
+    gameId   = g.id;
+    joinCode = g.join_code;
+    isHost   = false;
+    loadStateFromDB(g);
+    subscribeToGame();
+    if (g.status === 'active') { enterGame(); return true; }
+    openWaiting();
+    return true;
+  } catch(e) { return false; }
+}
+
+// ── EVENT LOG ─────────────────────────────────────────────────────
+async function logEvent(type, payload = null) {
+  if (!gameId || !currentUser) return;
+  try {
+    await db.from('ironfield_events').insert({
+      game_id: gameId, profile_id: currentUser.id,
+      turn_number: turnNumber, event_type: type, payload
+    });
+  } catch(e) { /* non-critical */ }
+}
+
+// ── STATE RESET ───────────────────────────────────────────────────
+function resetMultiState() {
+  gameId = null; joinCode = null; myPlayer = null;
+  isHost = false; myPlanId = null;
+  myPlanSubmitted = false; enemyPlanSubmitted = false;
+  realtimeChan = null;
+  turnNumber = 1;
+  mechs.forEach(m => { m.mpSpent = 0; });
+}
+
+
+
+const canvas = document.getElementById('grid');
+const ctx    = canvas.getContext('2d');
+const carea  = document.getElementById('carea');
+const wc     = document.getElementById('wheel');
+const wctx   = wc.getContext('2d');
+
+// ── CONFIG ───────────────────────────────────────────────────────
+const HS   = 23;
+const S3   = Math.sqrt(3);
+const COLS = 29;
+const ROWS = 21;
+const TMPL_R = HS * 0.97;  // coverage test radius — gives exactly 24 full tris
+const OUTLINE_R = HS * 2.0; // outline drawn radius — reaches outer vertices of covered triangles
+
+// ── STATE ────────────────────────────────────────────────────────
+let mode   = 'select';
+let flags  = { tri:false, out:true, half:true, verts:true };
+let selId  = null;
+let losId  = null;
+let losPt  = null;
+let mHex   = null;
+let mTriKey= null;
+let hovVert= null;
+let currentPath = null;  // A* path as array of vertKeys when in move mode
+let ox = 0, oy = 0;
+
+// ── HEX / TRI GEOMETRY ──────────────────────────────────────────
+function hCentre(q, r) {
+  return { x: HS * 1.5 * q, y: HS * (S3 * r + S3 / 2 * q) };
+}
+function hVerts(cx, cy) {
+  const v = [];
+  for (let i = 0; i < 6; i++) {
+    const a = Math.PI / 3 * i;
+    v.push({ x: cx + HS * Math.cos(a), y: cy + HS * Math.sin(a) });
+  }
+  return v;
+}
+function hTris(cx, cy) {
+  const v = hVerts(cx, cy);
+  const c = { x: cx, y: cy };
+  return v.map((vi, i) => [c, vi, v[(i + 1) % 6]]);
+}
+function tCent(tri) {
+  return { x: (tri[0].x + tri[1].x + tri[2].x) / 3,
+           y: (tri[0].y + tri[1].y + tri[2].y) / 3 };
+}
+function w2hex(wx, wy) {
+  const fq = (2 / 3 * wx) / HS, fr = (-1 / 3 * wx + S3 / 3 * wy) / HS;
+  let q = Math.round(fq), r = Math.round(fr), s = Math.round(-fq - fr);
+  const dq = Math.abs(q-fq), dr = Math.abs(r-fr), ds = Math.abs(s-(-fq-fr));
+  if (dq > dr && dq > ds) q = -r - s; else if (dr > ds) r = -q - s;
+  return { q, r };
+}
+function w2tri(wx, wy) {
+  const { q, r } = w2hex(wx, wy);
+  const { x: cx, y: cy } = hCentre(q, r);
+  const tris = hTris(cx, cy);
+  for (let t = 0; t < 6; t++) if (ptInTri(wx, wy, tris[t])) return { q, r, t };
+  let best = 0, bd = Infinity;
+  tris.forEach((tri, t) => { const c = tCent(tri); const d = (wx-c.x)**2+(wy-c.y)**2; if (d < bd) { bd = d; best = t; } });
+  return { q, r, t: best };
+}
+function ptInTri(px, py, tri) {
+  const s = (ax, ay, bx, by) => (px - bx) * (ay - by) - (ax - bx) * (py - by);
+  const d1 = s(tri[0].x,tri[0].y,tri[1].x,tri[1].y);
+  const d2 = s(tri[1].x,tri[1].y,tri[2].x,tri[2].y);
+  const d3 = s(tri[2].x,tri[2].y,tri[0].x,tri[0].y);
+  return !((d1<0||d2<0||d3<0)&&(d1>0||d2>0||d3>0));
+}
+function tKey(q, r, t) { return `${q},${r}:${t}`; }
+
+// ── TRIANGLE-GRID VERTICES ───────────────────────────────────────
+let allVerts = [];
+function buildVertexList() {
+  allVerts = [];
+  const seen = new Set();
+  const snap = (x, y) => `${Math.round(x * 1000)},${Math.round(y * 1000)}`;
+  for (let q = 0; q < COLS; q++) {
+    for (let ri = 0; ri < ROWS; ri++) {
+      const r = ri - Math.floor(q / 2);
+      const { x: cx, y: cy } = hCentre(q, r);
+      [{ x: cx, y: cy }, ...hVerts(cx, cy)].forEach(v => {
+        const k = snap(v.x, v.y);
+        if (!seen.has(k)) { seen.add(k); allVerts.push({ wx: v.x, wy: v.y }); }
+      });
+    }
+  }
+}
+function snapToVert(wx, wy) {
+  let best = null, bd = Infinity;
+  allVerts.forEach(v => {
+    const d = (wx - v.wx) ** 2 + (wy - v.wy) ** 2;
+    if (d < bd) { bd = d; best = v; }
+  });
+  return best;
+}
+
+// ── A* PATHFINDING ON VERTEX GRAPH ───────────────────────────────
+// Pre-build adjacency: each vertex → list of neighbour vertices
+// Two vertices are neighbours if their distance ≈ HS (one triangle edge)
+let vertNeighbours = new Map();  // vertKey → [vertKey, ...]
+let vertByKey      = new Map();  // vertKey → {wx,wy}
+
+function vertKey(wx, wy) { return `${Math.round(wx*100)},${Math.round(wy*100)}`; }
+
+function buildAdjacency() {
+  vertNeighbours.clear();
+  vertByKey.clear();
+  const THRESH = HS * HS * 1.05;  // distance² threshold for neighbours (slightly > HS²)
+  allVerts.forEach(v => {
+    const k = vertKey(v.wx, v.wy);
+    vertByKey.set(k, v);
+    vertNeighbours.set(k, []);
+  });
+  // O(n²) — acceptable for our small grid; could use spatial hash if needed
+  for (let i = 0; i < allVerts.length; i++) {
+    const a = allVerts[i], ka = vertKey(a.wx, a.wy);
+    for (let j = i + 1; j < allVerts.length; j++) {
+      const b = allVerts[j], kb = vertKey(b.wx, b.wy);
+      const d2 = (a.wx-b.wx)**2 + (a.wy-b.wy)**2;
+      if (d2 < THRESH && d2 > HS * HS * 0.8) {
+        vertNeighbours.get(ka).push(kb);
+        vertNeighbours.get(kb).push(ka);
+      }
+    }
+  }
+}
+
+// A* — returns array of vertex keys from start to goal (inclusive), or null
+function astar(startWx, startWy, goalWx, goalWy) {
+  const sk = vertKey(startWx, startWy);
+  const gk = vertKey(goalWx,  goalWy);
+  if (sk === gk) return [sk];
+
+  const h = (k) => {
+    const v = vertByKey.get(k);
+    return Math.hypot(v.wx - goalWx, v.wy - goalWy) / HS;
+  };
+
+  const g   = new Map([[sk, 0]]);
+  const f   = new Map([[sk, h(sk)]]);
+  const prev= new Map();
+  const open= new Set([sk]);
+
+  while (open.size > 0) {
+    // Pick open node with lowest f
+    let cur = null, bf = Infinity;
+    open.forEach(k => { const fk = f.get(k) ?? Infinity; if (fk < bf) { bf = fk; cur = k; } });
+    if (cur === gk) {
+      // Reconstruct path
+      const path = [];
+      let c = cur;
+      while (c !== undefined) { path.unshift(c); c = prev.get(c); }
+      return path;
+    }
+    open.delete(cur);
+    const gc = g.get(cur) ?? Infinity;
+    (vertNeighbours.get(cur) || []).forEach(nb => {
+      const ng = gc + 1;   // uniform cost = 1 per vertex step
+      if (ng < (g.get(nb) ?? Infinity)) {
+        prev.set(nb, cur);
+        g.set(nb, ng);
+        f.set(nb, ng + h(nb));
+        open.add(nb);
+      }
+    });
+  }
+  return null;  // no path
+}
+
+// ── TEMPLATE — ROTATING HEX ─────────────────────────────────────
+//
+// The template is a regular hexagon of circumradius TMPL_R,
+// centred on the mech anchor, rotated so that one EDGE faces
+// the mech's facing direction.
+//
+// Facing direction maps to template rotation:
+//   facing = angle bisector of the front edge.
+//   A flat-top hex (rotation=0) has edges at 90°,150°,210°,270°,330°,30°
+//   and corners at 0°,60°,120°,180°,240°,300°.
+//   The "front" edge midpoint is at 90° from corner 0 (i.e. between corners 0 and 1).
+//
+// We define:
+//   templateRotation(facing) = facing - 90°
+//   (so that facing=0° → front edge points up → flat-top with top edge forward)
+//
+// Actually let's be explicit:
+//   facing 0°   → top edge is front → template corners at 0°,60°,120°,180°,240°,300°
+//                                     (flat-top, same as before)
+//   facing 30°  → template rotated 30° → pointy-top → corners at 30°,90°,...
+//   etc.
+//
+// The CONE visualisation: draw a filled sector from -30° to +30°
+// relative to facing, at a shorter radius, to show the forward arc.
+
+function inRotHex(px, py, cx, cy, R, rotDeg) {
+  // rotDeg = rotation of the hex template (NOT facing direction)
+  const a  = -rotDeg * Math.PI / 180;
+  const dx =  (px - cx) * Math.cos(a) - (py - cy) * Math.sin(a);
+  const dy =  (px - cx) * Math.sin(a) + (py - cy) * Math.cos(a);
+  const q  = (2 / 3 * dx) / R;
+  const r  = (-1 / 3 * dx + S3 / 3 * dy) / R;
+  const s  = -q - r;
+  return Math.max(Math.abs(q), Math.abs(r), Math.abs(s)) <= 1.0 + 1e-9;
+}
+
+// Template rotation for a given facing:
+// We want the front edge of the template to face 'facing' degrees.
+// Flat-top hex (rot=0): the top edge midpoint is at 90°.
+// So templateRot = facing - 90°.
+// facing 0° = north (screen up). Canvas 0° = east.
+// facingToCanvas: converts north-bearing to canvas angle
+function facingToCanvas(facingDeg) { return facingDeg - 90; }
+// templateRot: hex rotation so front EDGE points toward facing direction
+function templateRot(facingDeg) { return facingToCanvas(facingDeg); }
+
+// Get coverage triangles for a mech (geometric test, works for any anchor pos)
+function getCoverage(mech) {
+  const rot    = templateRot(mech.facing);
+  const full   = [], half = [];
+  const sf     = new Set(), sh = new Set();
+  const anchor = w2hex(mech.wx, mech.wy);
+  const RANGE  = 3;
+  const inBounds = (q, r) => {
+    if (q < 0 || q >= COLS) return false;
+    const rMin = -Math.floor(q / 2);
+    return r >= rMin && r < rMin + ROWS;
+  };
+  for (let dq = -RANGE; dq <= RANGE; dq++) {
+    for (let dr = -RANGE; dr <= RANGE; dr++) {
+      const q = anchor.q + dq, r = anchor.r + dr;
+      if (!inBounds(q, r)) continue;
+      const { x: cx, y: cy } = hCentre(q, r);
+      hTris(cx, cy).forEach((tri, t) => {
+        const k    = tKey(q, r, t);
+        const cent = tCent(tri);
+        if (inRotHex(cent.x, cent.y, mech.wx, mech.wy, TMPL_R, rot)) {
+          if (!sf.has(k)) { sf.add(k); full.push({ q, r, t }); }
+        } else if (tri.some(v => inRotHex(v.x, v.y, mech.wx, mech.wy, TMPL_R, rot))) {
+          if (!sh.has(k)) { sh.add(k); half.push({ q, r, t }); }
+        }
+      });
+    }
+  }
+  return { full, half };
+}
+
+// ── MECH CLASSES ─────────────────────────────────────────────────
+// mpMax  = movement points available per turn
+// mpSpent = MP used this turn (resets on new turn)
+// class   = label for display
+const MECH_CLASSES = {
+  scout:  { label:'SCOUT',  mpMax:18, color:'#55ffbb' },
+  medium: { label:'MEDIUM', mpMax:12, color:'#00ff88' },
+  heavy:  { label:'HEAVY',  mpMax: 6, color:'#88ff44' },
+};
+
+let mechs = [
+  { id:'p1a', player:1, name:'LANCE-1A', cls:'scout',  facing:  0, wx:0, wy:0, mpSpent:0 },
+  { id:'p1b', player:1, name:'LANCE-1B', cls:'medium', facing:  0, wx:0, wy:0, mpSpent:0 },
+  { id:'p1c', player:1, name:'LANCE-1C', cls:'heavy',  facing:  0, wx:0, wy:0, mpSpent:0 },
+  { id:'p2a', player:2, name:'LANCE-2A', cls:'scout',  facing:180, wx:0, wy:0, mpSpent:0 },
+  { id:'p2b', player:2, name:'LANCE-2B', cls:'medium', facing:180, wx:0, wy:0, mpSpent:0 },
+  { id:'p2c', player:2, name:'LANCE-2C', cls:'heavy',  facing:180, wx:0, wy:0, mpSpent:0 },
+];
+
+function mechMpMax(mech)  { return MECH_CLASSES[mech.cls]?.mpMax  ?? 12; }
+function mechMpLeft(mech) { return mechMpMax(mech) - mech.mpSpent; }
+
+function placeMechsDefault() {
+  const p1 = [{q:3,r:1},{q:3,r:4},{q:3,r:7}];
+  const p2 = [{q:11,r:1},{q:11,r:4},{q:11,r:7}];
+  mechs.filter(m => m.player === 1).forEach((m, i) => {
+    const { x, y } = hCentre(p1[i].q, p1[i].r); m.wx = x; m.wy = y;
+  });
+  mechs.filter(m => m.player === 2).forEach((m, i) => {
+    const { x, y } = hCentre(p2[i].q, p2[i].r); m.wx = x; m.wy = y;
+  });
+}
+
+// ── CANVAS HELPERS ───────────────────────────────────────────────
+function w2c(wx, wy) { return { x: wx + ox, y: wy + oy }; }
+function c2w(cx, cy) { return { x: cx - ox, y: cy - oy }; }
+
+// ── DRAW ─────────────────────────────────────────────────────────
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#060a07';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = 'rgba(0,255,136,0.022)';
+  for (let x = 0; x < canvas.width; x += 18)
+    for (let y = 0; y < canvas.height; y += 18)
+      ctx.fillRect(x, y, 1, 1);
+
+  drawHexLayer();
+  if (flags.tri) drawTriGrid();
+  drawCoverage();
+  if (flags.out) drawOutlines();
+  drawFacingCones();
+  if (flags.verts) drawVertices();
+  if (mode === 'move' && selId) drawMoveTargets();
+  drawLOS();
+}
+
+function drawHexLayer() {
+  for (let q = 0; q < COLS; q++) {
+    for (let ri = 0; ri < ROWS; ri++) {
+      const r  = ri - Math.floor(q / 2);
+      const { x, y } = hCentre(q, r);
+      const { x: cx, y: cy } = w2c(x, y);
+      const v  = hVerts(cx, cy);
+      const hov = mHex && mHex.q === q && mHex.r === r;
+      ctx.beginPath();
+      v.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+      ctx.closePath();
+      ctx.fillStyle   = hov ? 'rgba(0,255,136,0.025)' : 'transparent';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,255,136,0.08)';
+      ctx.lineWidth   = 0.5;
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(0,255,136,0.08)';
+      ctx.font = '7px Share Tech Mono';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${q},${r}`, cx, cy + 3);
+    }
+  }
+}
+
+function drawTriGrid() {
+  for (let q = 0; q < COLS; q++) {
+    for (let ri = 0; ri < ROWS; ri++) {
+      const r = ri - Math.floor(q / 2);
+      const { x, y } = hCentre(q, r);
+      const { x: cx, y: cy } = w2c(x, y);
+      hTris(cx, cy).forEach((tri, t) => {
+        const k = tKey(q, r, t), hov = k === mTriKey;
+        ctx.beginPath();
+        ctx.moveTo(tri[0].x, tri[0].y);
+        ctx.lineTo(tri[1].x, tri[1].y);
+        ctx.lineTo(tri[2].x, tri[2].y);
+        ctx.closePath();
+        if (hov) { ctx.fillStyle = 'rgba(0,255,136,0.07)'; ctx.fill(); }
+        ctx.strokeStyle = hov ? 'rgba(0,255,136,0.38)' : 'rgba(0,255,136,0.07)';
+        ctx.lineWidth = 0.5; ctx.stroke();
+        const c = tCent(tri);
+        ctx.fillStyle = 'rgba(0,255,136,0.12)';
+        ctx.font = '5px Share Tech Mono'; ctx.textAlign = 'center';
+        ctx.fillText(t, c.x, c.y + 2);
+      });
+    }
+  }
+}
+
+function drawCoverage() {
+  mechs.forEach(mech => {
+    const { full, half } = getCoverage(mech);
+    const isSel = mech.id === selId, isP1 = mech.player === 1;
+
+    const fullFill   = isP1 ? (isSel?'rgba(0,255,136,0.28)':'rgba(0,255,136,0.14)')
+                             : (isSel?'rgba(255,68,68,0.28)':'rgba(255,68,68,0.14)');
+    const fullStroke = isP1 ? 'rgba(0,255,136,0.52)' : 'rgba(255,68,68,0.52)';
+    const halfFill   = isP1 ? (isSel?'rgba(0,255,136,0.11)':'rgba(0,255,136,0.05)')
+                             : (isSel?'rgba(255,68,68,0.11)':'rgba(255,68,68,0.05)');
+    const halfStroke = isP1 ? 'rgba(0,255,136,0.22)' : 'rgba(255,68,68,0.22)';
+
+    const draw = (list, fill, stroke, dashed) => {
+      list.forEach(({ q, r, t }) => {
+        const { x, y } = hCentre(q, r);
+        const { x: cx, y: cy } = w2c(x, y);
+        const tri = hTris(cx, cy)[t];
+        ctx.beginPath();
+        ctx.moveTo(tri[0].x, tri[0].y);
+        ctx.lineTo(tri[1].x, tri[1].y);
+        ctx.lineTo(tri[2].x, tri[2].y);
+        ctx.closePath();
+        ctx.fillStyle = fill; ctx.fill();
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = isSel ? 1.1 : 0.7;
+        if (dashed) ctx.setLineDash([2, 2]);
+        ctx.stroke(); ctx.setLineDash([]);
+      });
+    };
+    draw(full, fullFill, fullStroke, false);
+    if (flags.half) draw(half, halfFill, halfStroke, true);
+  });
+}
+
+function drawOutlines() {
+  mechs.forEach(mech => {
+    const isSel = mech.id === selId, isP1 = mech.player === 1;
+    const { x: cx, y: cy } = w2c(mech.wx, mech.wy);
+    const rot = templateRot(mech.facing);
+    const rotRad = rot * Math.PI / 180;
+
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = Math.PI / 3 * i + rotRad;
+      const px = cx + OUTLINE_R * Math.cos(a);
+      const py = cy + OUTLINE_R * Math.sin(a);
+      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = isP1
+      ? (isSel ? 'rgba(0,255,136,0.85)' : 'rgba(0,255,136,0.22)')
+      : (isSel ? 'rgba(255,68,68,0.85)' : 'rgba(255,68,68,0.22)');
+    ctx.lineWidth = isSel ? 2 : 1;
+    ctx.setLineDash(isSel ? [] : [4, 3]);
+    ctx.stroke(); ctx.setLineDash([]);
+  });
+}
+
+function drawFacingCones() {
+  mechs.forEach(mech => {
+    const isSel = mech.id === selId, isP1 = mech.player === 1;
+    const { x: cx, y: cy } = w2c(mech.wx, mech.wy);
+
+    // The "front edge" of the template hex is at angle facing.
+    // The two corners bounding that edge are at facing ± 30° from the template centre,
+    // but we define it as: the edge whose midpoint is at (facing - 90° + 90°) = facing.
+    // Template rotation = facing - 90°.
+    // In a flat-top hex (rot=0), the top edge midpoint is at 90°.
+    // Rotating by rot = facing - 90° moves the top edge midpoint to facing°.
+    //
+    // The two corners bounding the front edge:
+    //   corner A = facing - 30°  (from centre)
+    //   corner B = facing + 30°  (from centre)
+    // Both at distance TMPL_R.
+
+    const fRad = facingToCanvas(mech.facing) * Math.PI / 180;
+    const coneHalf = Math.PI / 6;   // 30°
+
+    const aA  = fRad - coneHalf;
+    const aB  = fRad + coneHalf;
+    const pAx = cx + OUTLINE_R * Math.cos(aA);
+    const pAy = cy + OUTLINE_R * Math.sin(aA);
+    const pBx = cx + OUTLINE_R * Math.cos(aB);
+    const pBy = cy + OUTLINE_R * Math.sin(aB);
+
+    // Draw cone: two lines from centre to the two front corners
+    const coneColor = isSel
+      ? (isP1 ? 'rgba(255,170,0,0.9)' : 'rgba(255,100,100,0.9)')
+      : (isP1 ? 'rgba(255,170,0,0.35)' : 'rgba(255,100,100,0.35)');
+
+    // Filled sector (subtle)
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(pAx, pAy);
+    ctx.arc(cx, cy, OUTLINE_R, aA, aB, false);
+    ctx.closePath();
+    ctx.fillStyle = isSel
+      ? (isP1 ? 'rgba(255,170,0,0.08)' : 'rgba(255,100,100,0.08)')
+      : 'transparent';
+    ctx.fill();
+
+    // Two lines forming the cone edges
+    ctx.beginPath();
+    ctx.moveTo(cx, cy); ctx.lineTo(pAx, pAy);
+    ctx.moveTo(cx, cy); ctx.lineTo(pBx, pBy);
+    ctx.strokeStyle = coneColor;
+    ctx.lineWidth   = isSel ? 2 : 1;
+    ctx.stroke();
+
+    // Centre dot (anchor point)
+    ctx.beginPath();
+    ctx.arc(cx, cy, isSel ? 4 : 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = isP1
+      ? (isSel ? '#00ff88' : '#006633')
+      : (isSel ? '#ff4444' : '#881111');
+    ctx.fill();
+
+    // Name label (selected only)
+    if (isSel) {
+      ctx.font      = 'bold 9px Orbitron';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = isP1 ? 'rgba(0,255,136,0.92)' : 'rgba(255,68,68,0.92)';
+      ctx.fillText(mech.name, cx, cy + OUTLINE_R + 14);
+    }
+  });
+}
+
+function drawVertices() {
+  allVerts.forEach(v => {
+    const { x: cx, y: cy } = w2c(v.wx, v.wy);
+    if (cx < -5 || cx > canvas.width + 5 || cy < -5 || cy > canvas.height + 5) return;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 1.2, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,255,136,0.12)';
+    ctx.fill();
+  });
+}
+
+function drawMoveTargets() {
+  const mech = mechs.find(m => m.id === selId); if (!mech) return;
+  const mpLeft = mechMpLeft(mech);
+
+  // Colour each vertex by whether it's reachable within remaining MP
+  // We do a quick BFS flood from mech position to know costs to all vertices.
+  // For hovering we use A* which is already computed; for colouring we use
+  // a simple distance estimate (Euclidean / HS) as an optimistic lower-bound.
+  allVerts.forEach(v => {
+    const { x: cx, y: cy } = w2c(v.wx, v.wy);
+    if (cx < -5 || cx > canvas.width + 5 || cy < -5 || cy > canvas.height + 5) return;
+
+    const isHov = hovVert
+      && Math.abs(v.wx - hovVert.wx) < 0.5
+      && Math.abs(v.wy - hovVert.wy) < 0.5;
+
+    // Optimistic min-cost = straight-line vertex hops (lower bound for A*)
+    const minCost = Math.round(Math.hypot(v.wx - mech.wx, v.wy - mech.wy) / HS);
+    const reachable = minCost <= mpLeft;
+
+    let dotColor, strokeColor;
+    if (isHov) {
+      const cost = currentPath ? currentPath.length - 1 : minCost;
+      const overBudget = cost > mpLeft;
+      dotColor    = overBudget ? 'rgba(255,60,60,0.95)' : 'rgba(255,170,0,0.95)';
+      strokeColor = overBudget ? '#ff3333' : '#ffaa00';
+    } else if (reachable) {
+      dotColor    = 'rgba(255,170,0,0.20)';
+      strokeColor = 'rgba(255,170,0,0.0)';
+    } else {
+      dotColor    = 'rgba(255,50,50,0.10)';
+      strokeColor = 'rgba(255,50,50,0.0)';
+    }
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, isHov ? 6 : 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = dotColor; ctx.fill();
+    if (isHov) { ctx.strokeStyle = strokeColor; ctx.lineWidth = 1.5; ctx.stroke(); }
+  });
+
+  if (!hovVert || !currentPath) return;
+
+  const pathCost   = currentPath.length - 1;
+  const overBudget = pathCost > mpLeft;
+  const pathColor  = overBudget ? 'rgba(255,60,60,0.70)' : 'rgba(255,170,0,0.65)';
+
+  // ── Path line ───────────────────────────────────────────────────
+  if (currentPath.length > 1) {
+    ctx.beginPath();
+    currentPath.forEach((k, i) => {
+      const v = vertByKey.get(k); if (!v) return;
+      const { x: cx, y: cy } = w2c(v.wx, v.wy);
+      i === 0 ? ctx.moveTo(cx, cy) : ctx.lineTo(cx, cy);
+    });
+    ctx.strokeStyle = pathColor;
+    ctx.lineWidth   = 2;
+    ctx.setLineDash([4, 3]);
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  // Path node dots
+  currentPath.forEach((k, i) => {
+    const v = vertByKey.get(k); if (!v) return;
+    const { x: cx, y: cy } = w2c(v.wx, v.wy);
+    ctx.beginPath();
+    ctx.arc(cx, cy, i === currentPath.length - 1 ? 5 : 3, 0, Math.PI * 2);
+    ctx.fillStyle = i === currentPath.length - 1
+      ? (overBudget ? '#ff4444' : '#ffaa00')
+      : (overBudget ? 'rgba(255,60,60,0.55)' : 'rgba(255,170,0,0.55)');
+    ctx.fill();
+  });
+
+  // ── Ghost outline at destination ────────────────────────────────
+  const { x: hx, y: hy } = w2c(hovVert.wx, hovVert.wy);
+  const rot    = templateRot(mech.facing);
+  const rotRad = rot * Math.PI / 180;
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = Math.PI / 3 * i + rotRad;
+    i === 0
+      ? ctx.moveTo(hx + OUTLINE_R * Math.cos(a), hy + OUTLINE_R * Math.sin(a))
+      : ctx.lineTo(hx + OUTLINE_R * Math.cos(a), hy + OUTLINE_R * Math.sin(a));
+  }
+  ctx.closePath();
+  ctx.strokeStyle = overBudget ? 'rgba(255,60,60,0.50)' : 'rgba(255,170,0,0.50)';
+  ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([]);
+
+  // Ghost coverage tris
+  if (!overBudget) {
+    const ghost = { ...mech, wx: hovVert.wx, wy: hovVert.wy };
+    const { full } = getCoverage(ghost);
+    full.forEach(({ q, r, t }) => {
+      const { x, y } = hCentre(q, r);
+      const { x: cx2, y: cy2 } = w2c(x, y);
+      const tri = hTris(cx2, cy2)[t];
+      ctx.beginPath();
+      ctx.moveTo(tri[0].x, tri[0].y); ctx.lineTo(tri[1].x, tri[1].y);
+      ctx.lineTo(tri[2].x, tri[2].y); ctx.closePath();
+      ctx.fillStyle = 'rgba(255,170,0,0.07)'; ctx.fill();
+    });
+  }
+
+  // ── Cost label ──────────────────────────────────────────────────
+  const labelX = hx;
+  const labelY = hy - OUTLINE_R - 10;
+  const costLabel = pathCost === 0
+    ? 'HERE'
+    : overBudget
+      ? `COST: ${pathCost}  /  ${mpLeft} LEFT  ✗`
+      : `COST: ${pathCost}  /  ${mpLeft} LEFT`;
+
+  ctx.font      = 'bold 11px Orbitron';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(0,0,0,0.75)';
+  ctx.fillText(costLabel, labelX + 1, labelY + 1);
+  ctx.fillStyle = overBudget ? '#ff4444' : (pathCost === 0 ? '#00ff88' : '#ffaa00');
+  ctx.fillText(costLabel, labelX, labelY);
+}
+
+function drawLOS() {
+  if (mode !== 'los' || !losId || !losPt) return;
+  const src = mechs.find(m => m.id === losId); if (!src) return;
+  const { x: sx, y: sy } = w2c(src.wx, src.wy);
+  const { x: tx, y: ty } = w2c(losPt.x, losPt.y);
+  const STEPS = 120, seen = new Set();
+  for (let i = 0; i <= STEPS; i++) {
+    const f  = i / STEPS;
+    const wx = src.wx + (losPt.x - src.wx) * f;
+    const wy = src.wy + (losPt.y - src.wy) * f;
+    const { q, r, t } = w2tri(wx, wy);
+    const k = tKey(q, r, t); if (seen.has(k)) continue; seen.add(k);
+    const { x: hx, y: hy } = hCentre(q, r);
+    const { x: cx2, y: cy2 } = w2c(hx, hy);
+    const tri = hTris(cx2, cy2)[t];
+    ctx.beginPath();
+    ctx.moveTo(tri[0].x,tri[0].y); ctx.lineTo(tri[1].x,tri[1].y);
+    ctx.lineTo(tri[2].x,tri[2].y); ctx.closePath();
+    ctx.fillStyle = 'rgba(136,170,255,0.11)'; ctx.fill();
+  }
+  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(tx, ty);
+  ctx.strokeStyle = 'rgba(136,170,255,0.72)'; ctx.lineWidth = 1.5;
+  ctx.setLineDash([5, 3]); ctx.stroke(); ctx.setLineDash([]);
+  const dist = (Math.hypot(losPt.x-src.wx, losPt.y-src.wy) / (HS * S3 / 2)).toFixed(1);
+  ctx.font = '10px Share Tech Mono'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#88aaff';
+  ctx.fillText(`${dist} tri`, (sx+tx)/2, (sy+ty)/2 - 9);
+}
+
+// ── FACING WHEEL ─────────────────────────────────────────────────
+function drawWheel() {
+  const W = wc.width, H = wc.height, cx = W/2, cy = H/2, r = W/2-4;
+  wctx.clearRect(0, 0, W, H);
+  wctx.beginPath(); wctx.arc(cx, cy, r, 0, Math.PI*2);
+  wctx.strokeStyle = '#14221a'; wctx.lineWidth = 1; wctx.stroke();
+  const m = mechs.find(x => x.id === selId); if (!m) return;
+
+  // Draw cone sector
+  const fRad = facingToCanvas(m.facing) * Math.PI / 180;
+  const coneHalf = Math.PI / 6;
+  wctx.beginPath();
+  wctx.moveTo(cx, cy);
+  wctx.lineTo(cx + (r-2)*Math.cos(fRad-coneHalf), cy + (r-2)*Math.sin(fRad-coneHalf));
+  wctx.arc(cx, cy, r-2, fRad-coneHalf, fRad+coneHalf, false);
+  wctx.closePath();
+  wctx.fillStyle = 'rgba(255,170,0,0.18)'; wctx.fill();
+  wctx.strokeStyle = '#ffaa00'; wctx.lineWidth = 1.5; wctx.stroke();
+
+  for (let f = 0; f < 360; f += 30) {
+    const a = facingToCanvas(f) * Math.PI / 180, isc = f === m.facing;
+    wctx.beginPath();
+    wctx.moveTo(cx + (r-(isc?10:5))*Math.cos(a), cy + (r-(isc?10:5))*Math.sin(a));
+    wctx.lineTo(cx + r*Math.cos(a),              cy + r*Math.sin(a));
+    wctx.strokeStyle = isc ? '#ffaa00' : '#005522';
+    wctx.lineWidth = isc ? 2 : 1; wctx.stroke();
+  }
+  wctx.beginPath(); wctx.arc(cx, cy, 3, 0, Math.PI*2);
+  wctx.fillStyle = '#00994d'; wctx.fill();
+}
+
+// ── UI ───────────────────────────────────────────────────────────
+let turnNumber = 1;
+
+function newTurn() {
+  turnNumber++;
+  mechs.forEach(m => { m.mpSpent = 0; });
+  addLog(`── TURN ${turnNumber} BEGINS  ·  ALL MP RESTORED ──`, 'ok');
+  document.getElementById('hmode').closest('.hstat').querySelector('b:last-of-type')
+    && (document.querySelector('#hfacing').textContent = `TURN ${turnNumber}`);
+  updatePanel(); buildRoster(); draw();
+}
+
+function togFlag(k) {
+  flags[k] = !flags[k];
+  const bmap = { tri:'tg', out:'out', half:'half', verts:'vx' };
+  document.getElementById(`b-${bmap[k]}`).classList.toggle('on', flags[k]);
+  addLog(`${k}: ${flags[k]?'ON':'OFF'}`);
+  draw();
+}
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('.tb[id^="b-"]').forEach(b => b.classList.remove('on'));
+  const bmap = { select:'sel', move:'move', rotate:'rot', los:'los' };
+  document.getElementById(`b-${bmap[m]||m}`).classList.add('on');
+  document.getElementById('hmode').textContent = m.toUpperCase();
+  if (m === 'los') { losId = selId; }
+  const hints = {
+    select: 'Click a unit to select it',
+    move:   'Click any vertex (amber dot) to move',
+    rotate: 'Click to set facing direction',
+    los:    'Hover to preview line of sight'
+  };
+  document.getElementById('mhint').textContent = hints[m] || '';
+  hovVert = null; draw();
+}
+function selMech(id) {
+  selId = id;
+  if (mode === 'los') losId = id;
+  updatePanel(); buildRoster(); draw();
+}
+function updatePanel() {
+  const m = mechs.find(x => x.id === selId);
+  if (!m) {
+    document.getElementById('rN').textContent   = '—';
+    document.getElementById('rPos').textContent = '—';
+    document.getElementById('rF').textContent   = '—°';
+    document.getElementById('rC').textContent   = 'full:— half:—';
+    document.getElementById('mpNums').textContent = '—';
+    document.getElementById('mpFill').style.width = '0%';
+    document.getElementById('mpFill').className = 'mpbar-fill ok';
+    drawWheel(); return;
+  }
+  const { full, half } = getCoverage(m);
+  const mpMax  = mechMpMax(m);
+  const mpLeft = mechMpLeft(m);
+  const pct    = Math.max(0, mpLeft / mpMax * 100);
+  const cls    = mpLeft <= 0 ? 'over' : mpLeft <= mpMax * 0.33 ? 'warn' : 'ok';
+
+  document.getElementById('rN').textContent   = m.name;
+  document.getElementById('rN').className     = `val${m.player===2?' r':''}`;
+  document.getElementById('rPos').textContent = `(${m.wx.toFixed(1)}, ${m.wy.toFixed(1)})`;
+  document.getElementById('rF').textContent   = `${m.facing}°`;
+  document.getElementById('rC').textContent   = `full:${full.length}  half:${half.length}`;
+  document.getElementById('hfacing').textContent = `${m.facing}° [P${m.player}]`;
+  document.getElementById('mpNums').textContent = `${mpLeft} / ${mpMax}`;
+  document.getElementById('mpNums').className  = `mpbar-nums ${cls}`;
+  document.getElementById('mpFill').style.width = `${pct}%`;
+  document.getElementById('mpFill').className   = `mpbar-fill ${cls}`;
+  drawWheel();
+}
+function buildRoster() {
+  const list = document.getElementById('mlist');
+  list.innerHTML = '';
+  mechs.forEach(mech => {
+    const { full, half } = getCoverage(mech);
+    const isSel  = mech.id === selId, isP1 = mech.player === 1;
+    const mpMax  = mechMpMax(mech);
+    const mpLeft = mechMpLeft(mech);
+    const cls    = MECH_CLASSES[mech.cls];
+
+    // Build pip row: green=free, dim=spent, up to 24 pips max (scale down for heavy)
+    const pipCount = Math.min(mpMax, 24);
+    const scale    = mpMax / pipCount;
+    const freeCount = Math.round(mpLeft / scale);
+    const usedCount = pipCount - freeCount;
+    let pipHtml = '<div class="mp-pips">';
+    for (let i = 0; i < pipCount; i++) {
+      pipHtml += `<div class="pip ${i < usedCount ? 'used' : 'free'}"></div>`;
+    }
+    pipHtml += '</div>';
+
+    const c = document.createElement('div');
+    c.className = `mc ${isP1?'p1':'p2'} ${isSel?'sel':''}`;
+    c.innerHTML = `<div class="mn">${mech.name}</div>
+      <div class="ms">
+        <div class="sr"><span>CLASS</span><span class="v">${cls?.label ?? mech.cls}</span></div>
+        <div class="sr"><span>FACING</span><span class="v">${mech.facing}°</span></div>
+        <div class="sr"><span>MP</span><span class="v">${mpLeft}/${mpMax}</span></div>
+        ${pipHtml}
+      </div>`;
+    c.onclick = () => selMech(mech.id);
+    list.appendChild(c);
+  });
+}
+function addLog(msg, cls='') {
+  const a = document.getElementById('log');
+  const t = new Date().toTimeString().slice(0,8);
+  const el = document.createElement('div');
+  el.className = `le ${cls}`;
+  el.innerHTML = `<span class="ts">${t}</span>${msg}`;
+  a.insertBefore(el, a.firstChild);
+  while (a.children.length > 60) a.removeChild(a.lastChild);
+}
+
+// ── INPUT ────────────────────────────────────────────────────────
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+  const { x: wx, y: wy } = c2w(cx, cy);
+  mHex = w2hex(wx, wy);
+  const tri = w2tri(wx, wy); mTriKey = tKey(tri.q, tri.r, tri.t);
+  losPt = (mode === 'los') ? { x:wx, y:wy } : null;
+  if (mode === 'move' && selId) {
+    const nv = snapToVert(wx, wy);
+    const newHov = nv && Math.hypot(nv.wx-wx, nv.wy-wy) < HS * 0.55 ? nv : null;
+    // Recompute A* only when hovered vertex changes
+    if (newHov !== hovVert || (newHov && hovVert && (newHov.wx !== hovVert.wx || newHov.wy !== hovVert.wy))) {
+      hovVert = newHov;
+      if (hovVert) {
+        const mech = mechs.find(m => m.id === selId);
+        currentPath = astar(mech.wx, mech.wy, hovVert.wx, hovVert.wy);
+      } else {
+        currentPath = null;
+      }
+    }
+  } else { hovVert = null; currentPath = null; }
+  const pathCost = (mode === 'move' && currentPath) ? currentPath.length - 1 : null;
+  const costStr  = pathCost !== null ? `  COST:${pathCost}` : '';
+  document.getElementById('rCur').textContent = `hex(${tri.q},${tri.r}) t[${tri.t}]${costStr}`;
+  const tip = document.getElementById('tip');
+  tip.style.left = (cx+13)+'px'; tip.style.top = (cy-16)+'px';
+  tip.style.display = 'block';
+  tip.textContent = pathCost !== null
+    ? `${tri.q},${tri.r}:${tri.t}  ·  ${pathCost} steps`
+    : `${tri.q},${tri.r}:${tri.t}`;
+  draw();
+});
+canvas.addEventListener('mouseleave', () => {
+  mHex=null; mTriKey=null; losPt=null; hovVert=null; currentPath=null;
+  document.getElementById('tip').style.display='none';
+  draw();
+});
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+  const { x: wx, y: wy } = c2w(cx, cy);
+  const nm = mechs.reduce((b, m) => {
+    const d = Math.hypot(wx-m.wx, wy-m.wy);
+    return (!b || d < b.d) ? { m, d } : b;
+  }, null);
+  const near = nm && nm.d < OUTLINE_R * 0.55 ? nm.m : null;
+
+  if (mode === 'select') {
+    if (near) selMech(near.id);
+    else { selId = null; updatePanel(); buildRoster(); draw(); }
+  }
+  if (mode === 'move') {
+    if (near && near.id !== selId) { selMech(near.id); return; }
+    if (selId && hovVert) {
+      const m    = mechs.find(x => x.id === selId);
+      const cost = currentPath ? currentPath.length - 1 : 0;
+      const mpLeft = mechMpLeft(m);
+      if (cost > mpLeft) {
+        addLog(`${m.name}: INSUFFICIENT MP (need ${cost}, have ${mpLeft})`, 'bad');
+        return;
+      }
+      m.wx      = hovVert.wx;
+      m.wy      = hovVert.wy;
+      m.mpSpent += cost;
+      addLog(`${m.name} moved  COST:${cost}  MP:${mechMpLeft(m)}/${mechMpMax(m)} remaining`, 'ok');
+      currentPath = null; hovVert = null;
+      updatePanel(); buildRoster(); draw();
+    }
+  }
+  if (mode === 'rotate') {
+    if (near) selMech(near.id);
+    if (selId) {
+      const m   = mechs.find(x => x.id === selId);
+      const canvasDeg = Math.atan2(wy - m.wy, wx - m.wx) * 180 / Math.PI;
+      const northDeg  = canvasDeg + 90;   // convert east-zero to north-zero
+      m.facing  = ((Math.round(northDeg / 30) * 30) % 360 + 360) % 360;
+      addLog(`${m.name} → ${m.facing}°`, 'ok');
+      updatePanel(); buildRoster(); draw();
+    }
+  }
+  if (mode === 'los') {
+    if (near) {
+      if (!losId || losId === near.id) { losId = near.id; addLog(`LOS src: ${near.name}`, 'ok'); }
+      else {
+        const src = mechs.find(m => m.id === losId);
+        const dist = (Math.hypot(near.wx-src.wx, near.wy-src.wy) / (HS*S3/2)).toFixed(1);
+        addLog(`LOS ${src.name}→${near.name}: ${dist} tri-units`, 'ok');
+        losId = null;
+      }
+    }
+  }
+});
+canvas.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  selId = null;
+  updatePanel(); buildRoster(); draw();
+});
+document.addEventListener('keydown', e => {
+  if (!selId) return;
+  const m = mechs.find(x => x.id === selId);
+  switch(e.key) {
+    case 'q': case 'Q': case ',':
+      m.facing = ((m.facing-30)+360)%360;
+      addLog(`${m.name} → ${m.facing}°`,'ok'); updatePanel(); buildRoster(); draw(); break;
+    case 'e': case 'E': case '.':
+      m.facing = (m.facing+30)%360;
+      addLog(`${m.name} → ${m.facing}°`,'ok'); updatePanel(); buildRoster(); draw(); break;
+    case 's': setMode('select'); break;
+    case 'm': setMode('move'); break;
+    case 'r': setMode('rotate'); break;
+    case 'l': setMode('los'); break;
+    case 't': togFlag('tri'); break;
+    case 'h': togFlag('half'); break;
+    case 'o': togFlag('out'); break;
+    case 'v': togFlag('verts'); break;
+  }
+});
+
+// ── RESIZE ───────────────────────────────────────────────────────
+function resize() {
+  const rect = carea.getBoundingClientRect();
+  canvas.width = rect.width; canvas.height = rect.height;
+  if (ox === 0 && oy === 0) {
+    const gw = HS * 1.5 * (COLS-1) + HS * 2;
+    const gh = HS * S3 * ROWS;
+    ox = (rect.width  - gw) / 2 + HS;
+    oy = (rect.height - gh) / 2 + HS * S3 * 0.25;
+    placeMechsDefault();
+  }
+  draw();
+}
+
+// ── INIT ─────────────────────────────────────────────────────────
+window.addEventListener('resize', resize);
+buildVertexList();
+buildAdjacency();
+
+setTimeout(() => {
+  addLog('Phase 2 — multiplayer ready', 'ok');
+  addLog('Sign in or create an account to begin');
+}, 80);
+
+// Hide the game elements until authenticated
+document.querySelector('.main').style.display = 'none';
+document.querySelector('header').style.display = 'none';
+
+// Override enterGame to also show game elements
+const _origEnterGame = enterGame;
+// Patch: show header + main when entering game
+function enterGame() {
+  document.querySelector('.main').style.display = 'flex';
+  document.querySelector('header').style.display = 'flex';
+  _origEnterGame();
+}
+
+initApp();
+buildRoster();
+updatePanel();
+
+</script>
+</body>
+</html>
