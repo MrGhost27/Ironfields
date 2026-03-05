@@ -654,24 +654,34 @@ async function claimSeat(slot) {
   showSync('Claiming seat…');
   const field = slot === 1 ? 'p1_id' : 'p2_id';
   const other = slot === 1 ? 'p2_id' : 'p1_id';
-  // Check other slot isn't already us
-  const { data: g } = await db.from('ironfield_games').select('p1_id,p2_id').eq('id', gameId).single();
-  if (g && g[other] === currentUser.id) {
-    showSyncErr(); return; // already in the other seat
+
+  // Fetch current state
+  const { data: g, error: fe } = await db.from('ironfield_games')
+    .select('p1_id,p2_id,status').eq('id', gameId).single();
+  if (fe || !g) { showSyncErr(); addLog('Could not read game: ' + (fe?.message||''), 'bad'); return; }
+
+  // Don't let one player take both seats
+  if (g[other] === currentUser.id) {
+    showSyncErr(); addLog('You already occupy the other seat.', 'bad'); return;
   }
-  // Release any existing seat
-  const update1 = {}; update1[g?.p1_id === currentUser.id ? 'p1_id' : g?.p2_id === currentUser.id ? 'p2_id' : '_'] = null;
-  // Just overwrite both our possible seats in one update
-  const clearMe = {};
-  if (g?.p1_id === currentUser.id) clearMe.p1_id = null;
-  if (g?.p2_id === currentUser.id) clearMe.p2_id = null;
-  if (Object.keys(clearMe).length) {
-    await db.from('ironfield_games').update(clearMe).eq('id', gameId);
+
+  // If seat is already taken by someone else, bail
+  if (g[field] !== null && g[field] !== currentUser.id) {
+    showSyncErr(); addLog('That seat was just taken.', 'bad');
+    renderWaiting(); return;
   }
-  // Claim target slot
+
+  // Build update: claim this seat (no .is() filter — RLS handles it)
   const claim = {}; claim[field] = currentUser.id;
-  const { error } = await db.from('ironfield_games').update(claim).eq('id', gameId).is(field, null);
-  if (error) { showSyncErr(); addLog('Seat taken or error: ' + error.message, 'bad'); return; }
+  const { error } = await db.from('ironfield_games')
+    .update(claim).eq('id', gameId);
+
+  if (error) {
+    showSyncErr();
+    addLog('Claim failed: ' + error.message, 'bad');
+    console.error('claimSeat error:', error);
+    return;
+  }
   myPlayer = slot;
   showSynced();
   renderWaiting();
@@ -736,23 +746,31 @@ function subscribeToGame() {
 
 function onGameUpdate(payload) {
   const g = payload.new;
-  document.getElementById('hTurn').textContent = g.turn_number;
-  if (g.status === 'active' && document.getElementById('scr-waiting') &&
-      !document.getElementById('scr-waiting').classList.contains('hidden')) {
-    // Other player started the game — enter for us too
-    loadStateFromGame(g.state);
-    enterGame();
+
+  // Always update turn counter if visible
+  const hTurn = document.getElementById('hTurn');
+  if (hTurn) hTurn.textContent = g.turn_number;
+
+  const inWaiting = document.getElementById('scr-waiting') &&
+                    !document.getElementById('scr-waiting').classList.contains('hidden');
+
+  if (inWaiting) {
+    // Re-render waiting room whenever the game row changes (seat claimed/released)
+    renderWaiting();
+    // If host just set status to active, enter game
+    if (g.status === 'active') {
+      loadStateFromGame(g.state);
+      enterGame();
+    }
     return;
   }
-  if (g.status === 'active') {
-    // Turn resolved by opponent — load new state
-    if (g.phase === 'planning') {
-      loadStateFromGame(g.state);
-      resetPlanUI();
-      addLog(`── TURN ${g.turn_number} BEGINS ──`, 'ok');
-    }
+
+  if (g.status === 'active' && g.phase === 'planning') {
+    loadStateFromGame(g.state);
+    resetPlanUI();
+    addLog(`── TURN ${g.turn_number} BEGINS ──`, 'ok');
+    buildRoster(); updatePanel(); draw();
   }
-  if (g.status === 'waiting') renderWaiting();
 }
 
 function onPlanUpdate(payload) {
