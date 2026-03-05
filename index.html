@@ -557,7 +557,7 @@ async function doCreateGame() {
   const initState = buildInitialState();
   const { data, error } = await db.from('ironfield_games')
     .insert({ join_code: code, status: 'waiting', phase: 'planning',
-              turn_number: 1, state: initState })
+              turn_number: 1, state: initState, host_id: currentUser.id })
     .select().single();
   if (error) { showSyncErr(); addLog('Could not create game: ' + error.message, 'bad'); return; }
   showSynced();
@@ -579,7 +579,7 @@ async function doJoinGame() {
   if (error || !data) { err.textContent = 'Game not found. Check the code.'; return; }
   gameId   = data.id;
   joinCode = data.join_code;
-  isHost   = false;
+  isHost   = localStorage.getItem('ironfield_host_' + data.id) === '1';
   localStorage.setItem('ironfield_game_' + currentUser.id, gameId);
   subscribeToGame();
   if (data.status === 'active') {
@@ -595,7 +595,6 @@ function openWaiting() {
   document.getElementById('code-display').textContent = joinCode;
   document.getElementById('wait-title').textContent =
     isHost ? '// WAITING FOR OPPONENT' : '// JOINED — WAITING TO START';
-  document.getElementById('btn-start').style.display = isHost ? 'block' : 'none';
   renderWaiting();
   showScreen('scr-waiting');
 }
@@ -610,6 +609,9 @@ async function renderWaiting() {
   const mine = currentUser.id;
   const iAm1 = g.p1_id === mine, iAm2 = g.p2_id === mine;
   myPlayer = iAm1 ? 1 : iAm2 ? 2 : null;
+
+  // Derive host status from DB — survives cache wipes and rejoins
+  isHost = g.host_id === mine;
 
   const makeRow = (slot, pid, name, color) => {
     const isMe   = pid === mine;
@@ -635,10 +637,15 @@ async function renderWaiting() {
     makeRow(1, g.p1_id, p1name, 'var(--ph)') +
     makeRow(2, g.p2_id, p2name, 'var(--red)');
 
-  const bothIn = g.p1_id && g.p2_id;
+  // Show/hide Start button based on isHost
+  const btnStart = document.getElementById('btn-start');
+  btnStart.style.display = isHost ? 'block' : 'none';
+  document.getElementById('wait-title').textContent =
+    isHost ? '// WAITING FOR OPPONENT' : '// JOINED — WAITING TO START';
+
+  const bothIn   = g.p1_id && g.p2_id;
   const canStart = isHost && bothIn && myPlayer !== null;
-  const btn = document.getElementById('btn-start');
-  btn.disabled = !canStart;
+  btnStart.disabled = !canStart;
   document.getElementById('wait-status').textContent = bothIn
     ? (isHost ? 'Both pilots ready. You can start!' : 'Both pilots ready. Waiting for host…')
     : 'Waiting for both seats to be claimed…';
@@ -932,6 +939,7 @@ function loadStateFromDB(gameRow) {
   if (gameRow.turn_number) turnNumber = gameRow.turn_number;
   myPlayer = gameRow.p1_id === currentUser.id ? 1
            : gameRow.p2_id === currentUser.id ? 2 : null;
+  isHost   = gameRow.host_id === currentUser.id;
 }
 
 // ── ENTER GAME ────────────────────────────────────────────────────
@@ -955,7 +963,7 @@ async function tryRejoin(savedId) {
     if (error || !g) return false;
     gameId   = g.id;
     joinCode = g.join_code;
-    isHost   = false;
+    isHost   = localStorage.getItem('ironfield_host_' + g.id) === '1';
     loadStateFromDB(g);
     subscribeToGame();
     if (g.status === 'active') { enterGame(); return true; }
