@@ -358,6 +358,9 @@
 <div class="screen-overlay hidden" id="scr-lobby">
   <div class="lobby-box">
     <h2>// IRONFIELD  ·  LOBBY</h2>
+    <div style="font-size:9px;letter-spacing:2px;color:var(--dim);text-align:right;margin-top:-8px;margin-bottom:4px;">
+      PILOT: <b style="color:var(--ph)" id="lobbyUser">—</b>
+    </div>
     <div class="lobby-section">
       <div class="lbl">CREATE NEW MATCH</div>
       <button class="auth-btn" onclick="doCreateGame()">CREATE GAME</button>
@@ -544,8 +547,11 @@ async function loadProfile(uid) {
   const { data } = await db.from('profiles').select('*').eq('id', uid).single();
   if (data) {
     currentProfile = data;
-    document.getElementById('hUser').textContent =
-      data.username ? data.username.charAt(0).toUpperCase() + data.username.slice(1) : data.username;
+  const displayName = data.username ? data.username.charAt(0).toUpperCase() + data.username.slice(1) : data.username;
+  const hUserEl    = document.getElementById('hUser');
+  const lobbyUserEl = document.getElementById('lobbyUser');
+  if (hUserEl)    hUserEl.textContent    = displayName;
+  if (lobbyUserEl) lobbyUserEl.textContent = displayName;
   }
 }
 
@@ -596,7 +602,11 @@ async function doRegister() {
   if (pe) { err.textContent = 'Callsign taken.'; await db.auth.signOut(); return; }
   currentUser = data.user;
   currentProfile = { id: data.user.id, username: user };
-  document.getElementById('hUser').textContent = user.charAt(0).toUpperCase() + user.slice(1);
+  const displayName = user ? user.charAt(0).toUpperCase() + user.slice(1) : user;
+  const hUserEl    = document.getElementById('hUser');
+  const lobbyUserEl = document.getElementById('lobbyUser');
+  if (hUserEl)    hUserEl.textContent    = displayName;
+  if (lobbyUserEl) lobbyUserEl.textContent = displayName;
   showScreen('scr-lobby');
 }
 
