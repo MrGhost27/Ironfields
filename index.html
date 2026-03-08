@@ -775,14 +775,13 @@ function copyCode() {
 
 async function doStartGame() {
   showSync('Starting…');
-  const initState = buildInitialState();
+  // Write active status with phase=deployment and NO mech positions yet
   const { error } = await db.from('ironfield_games')
-    .update({ status: 'active', state: initState })
+    .update({ status: 'active', phase: 'deployment', state: { mechs: [], turn: 1 } })
     .eq('id', gameId);
   if (error) { showSyncErr(); return; }
   showSynced();
-  loadStateFromGame(initState);
-  enterGame();
+  enterGame();   // host enters deployment immediately
   await logEvent('start');
 }
 
@@ -823,21 +822,19 @@ function onGameUpdate(payload) {
                     !document.getElementById('scr-waiting').classList.contains('hidden');
 
   if (inWaiting) {
-    // Re-render waiting room whenever the game row changes (seat claimed/released)
     renderWaiting();
-    // If host just set status to active, enter game
     if (g.status === 'active') {
-      loadStateFromGame(g.state);
+      // Non-host enters deployment phase when host clicks START
       enterGame();
     }
     return;
   }
 
-  if (g.status === 'active' && g.phase === 'planning') {
+  // Already in game — handle turn resolution arriving from host
+  if (g.status === 'active' && g.phase === 'planning' && gamePhase !== 'planning') {
+    // Both players deployed; state now has real positions
     loadStateFromGame(g.state);
-    resetPlanUI();
-    addLog(`── TURN ${g.turn_number} BEGINS ──`, 'ok');
-    buildRoster(); updatePanel(); draw();
+    enterPlanningPhase();
   }
 }
 
@@ -974,8 +971,8 @@ function resetPlanUI() {
 
 // ── GAME STATE SERIALISATION ──────────────────────────────────────
 function buildInitialState() {
-  placeMechsDefault();
-  return captureState();
+  // Returns a blank state — mech positions are set during deployment phase
+  return { mechs: [], turn: 1 };
 }
 
 function captureState() {
@@ -1009,17 +1006,27 @@ function loadStateFromDB(gameRow) {
 
 // ── ENTER GAME ────────────────────────────────────────────────────
 function enterGame() {
-  // Show game UI (hidden until authenticated)
   document.querySelector('.main').style.display = 'flex';
   document.querySelector('header').style.display = 'flex';
-  showScreen(null);  // hide all overlays
+  showScreen(null);
   document.getElementById('hTurn').textContent = turnNumber;
-  buildRoster(); updatePanel();
-  if (ox === 0 && oy === 0) resize(); else draw();
-  // Always begin with deployment phase
-  startDeployment();
+  // Resize canvas first so deployment zones render at the right size
+  if (ox === 0 && oy === 0) {
+    const carea = document.getElementById('carea');
+    const rect  = carea.getBoundingClientRect();
+    const grid  = document.getElementById('grid');
+    grid.width  = rect.width;
+    grid.height = rect.height;
+    const S3l = Math.sqrt(3);
+    const HS_l = 23;
+    const gw = HS_l * 1.5 * (29-1) + HS_l * 2;
+    const gh = HS_l * S3l * 21;
+    ox = (rect.width  - gw) / 2 + HS_l;
+    oy = (rect.height - gh) / 2 + HS_l * S3l * 0.25;
+  }
+  startDeployment();   // sets phase, hides toolbar, clears mechs to -9999
   addLog(`Match started — you are Player ${myPlayer}`, 'ok');
-  addLog('Place your mechs in your corner zone, then click READY');
+  addLog('Select a unit from the roster, then click your zone to place it');
 }
 
 // ── REJOIN ────────────────────────────────────────────────────────
@@ -1033,7 +1040,17 @@ async function tryRejoin(savedId) {
     isHost   = localStorage.getItem('ironfield_host_' + g.id) === '1';
     loadStateFromDB(g);
     subscribeToGame();
-    if (g.status === 'active') { enterGame(); return true; }
+    if (g.status === 'active') {
+      if (g.phase === 'planning') {
+        // Game is already past deployment — go straight to planning
+        if (g.state) loadStateFromGame(g.state);
+        enterGame();
+        enterPlanningPhase();
+      } else {
+        enterGame();  // back to deployment
+      }
+      return true;
+    }
     openWaiting();
     return true;
   } catch(e) { return false; }
@@ -2354,7 +2371,7 @@ function resize() {
     const gh = HS * S3 * ROWS;
     ox = (rect.width  - gw) / 2 + HS;
     oy = (rect.height - gh) / 2 + HS * S3 * 0.25;
-    placeMechsDefault();
+    // No placeMechsDefault() here — deployment phase handles mech placement
   }
   syncScrollbars();
   draw();
