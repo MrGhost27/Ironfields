@@ -787,13 +787,19 @@ function copyCode() {
 
 async function doStartGame() {
   showSync('Starting…');
-  // Write active status with phase=deployment and NO mech positions yet
-  const { error } = await db.from('ironfield_games')
+  const { error, data: updatedGame } = await db.from('ironfield_games')
     .update({ status: 'active', phase: 'deployment', state: { mechs: [], turn: 1 } })
-    .eq('id', gameId);
+    .eq('id', gameId)
+    .select().single();
   if (error) { showSyncErr(); return; }
   showSynced();
-  enterGame();   // host enters deployment immediately
+  // Ensure myPlayer is set from the DB row before rendering the roster
+  if (updatedGame) {
+    myPlayer = updatedGame.p1_id === currentUser.id ? 1
+             : updatedGame.p2_id === currentUser.id ? 2 : myPlayer;
+    isHost   = updatedGame.host_id === currentUser.id;
+  }
+  enterGame();
   await logEvent('start');
 }
 
@@ -879,7 +885,10 @@ function onGameUpdate(payload) {
   if (inWaiting) {
     renderWaiting();
     if (g.status === 'active') {
-      // Non-host enters deployment phase when host clicks START
+      // Set myPlayer from the live game row before entering deployment
+      myPlayer = g.p1_id === currentUser.id ? 1
+               : g.p2_id === currentUser.id ? 2 : myPlayer;
+      isHost   = g.host_id === currentUser.id;
       enterGame();
     }
     return;
