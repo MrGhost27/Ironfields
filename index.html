@@ -543,7 +543,8 @@ async function loadProfile(uid) {
   const { data } = await db.from('profiles').select('*').eq('id', uid).single();
   if (data) {
     currentProfile = data;
-    document.getElementById('hUser').textContent = data.username;
+    document.getElementById('hUser').textContent =
+      data.username ? data.username.charAt(0).toUpperCase() + data.username.slice(1) : data.username;
   }
 }
 
@@ -594,7 +595,7 @@ async function doRegister() {
   if (pe) { err.textContent = 'Callsign taken.'; await db.auth.signOut(); return; }
   currentUser = data.user;
   currentProfile = { id: data.user.id, username: user };
-  document.getElementById('hUser').textContent = user;
+  document.getElementById('hUser').textContent = user.charAt(0).toUpperCase() + user.slice(1);
   showScreen('scr-lobby');
 }
 
@@ -1690,6 +1691,8 @@ function drawTriGrid() {
 function drawCoverage() {
   mechs.forEach(mech => {
     if (mech.wx === -9999) return; // not yet deployed
+    const { full, half } = getCoverage(mech);
+    const isSel = mech.id === selId, isP1 = mech.player === 1;
 
     const fullFill   = isP1 ? (isSel?'rgba(0,255,136,0.28)':'rgba(0,255,136,0.14)')
                              : (isSel?'rgba(255,68,68,0.28)':'rgba(255,68,68,0.14)');
@@ -1698,7 +1701,7 @@ function drawCoverage() {
                              : (isSel?'rgba(255,68,68,0.11)':'rgba(255,68,68,0.05)');
     const halfStroke = isP1 ? 'rgba(0,255,136,0.22)' : 'rgba(255,68,68,0.22)';
 
-    const draw = (list, fill, stroke, dashed) => {
+    const drawTris = (list, fill, stroke, dashed) => {
       list.forEach(({ q, r, t }) => {
         const { x, y } = hCentre(q, r);
         const { x: cx, y: cy } = w2c(x, y);
@@ -1715,14 +1718,16 @@ function drawCoverage() {
         ctx.stroke(); ctx.setLineDash([]);
       });
     };
-    draw(full, fullFill, fullStroke, false);
-    if (flags.half) draw(half, halfFill, halfStroke, true);
+    drawTris(full, fullFill, fullStroke, false);
+    if (flags.half) drawTris(half, halfFill, halfStroke, true);
   });
 }
 
 function drawOutlines() {
   mechs.forEach(mech => {
     if (mech.wx === -9999) return;
+    const isSel = mech.id === selId, isP1 = mech.player === 1;
+    const { x: cx, y: cy } = w2c(mech.wx, mech.wy);
     const rot = templateRot(mech.facing);
     const rotRad = rot * Math.PI / 180;
 
@@ -2125,16 +2130,35 @@ function buildRoster() {
     c.innerHTML = inner;
 
     if (deploying && isMine) {
-      // Roster click selects unit for placement; deselects if already selected
       c.style.cursor = 'pointer';
       c.onclick = () => {
         selId = isSel ? null : mech.id;
         updateDeployStatus(); buildRoster(); draw();
       };
+      // Undeploy button for placed mechs
+      if (isPlaced) {
+        const xBtn = document.createElement('button');
+        xBtn.textContent = '✕';
+        xBtn.title = 'Remove from map';
+        xBtn.style.cssText = `position:absolute;top:4px;right:4px;
+          background:none;border:1px solid rgba(255,68,68,0.4);
+          color:rgba(255,68,68,0.7);font-size:9px;line-height:1;
+          padding:1px 4px;cursor:pointer;letter-spacing:0;`;
+        xBtn.onmouseenter = () => xBtn.style.color = 'rgba(255,68,68,1)';
+        xBtn.onmouseleave = () => xBtn.style.color = 'rgba(255,68,68,0.7)';
+        xBtn.onclick = (e) => {
+          e.stopPropagation();
+          mech.wx = -9999; mech.wy = -9999;
+          if (selId === mech.id) selId = null;
+          updateDeployStatus(); buildRoster(); draw();
+        };
+        c.style.position = 'relative';
+        c.appendChild(xBtn);
+      }
     } else if (!deploying) {
       c.onclick = () => selMech(mech.id);
     } else {
-      c.style.opacity = '0.35';  // enemy mechs dimmed during deployment
+      c.style.opacity = '0.35';
     }
     list.appendChild(c);
   });
