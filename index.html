@@ -134,6 +134,52 @@
   .pip.cost{background:var(--amb);}
   .pip.over{background:var(--red);}
 
+  /* ── MAP PAN SCROLLBARS ──────────────────────────────────────── */
+  .carea{ position:relative; overflow:hidden; }
+  .map-hscroll{
+    position:absolute;bottom:0;left:0;right:0;height:12px;
+    background:rgba(0,0,0,0.4);z-index:15;
+    display:flex;align-items:center;padding:0 2px;
+  }
+  .map-vscroll{
+    position:absolute;top:0;right:0;bottom:12px;width:12px;
+    background:rgba(0,0,0,0.4);z-index:15;
+    display:flex;flex-direction:column;align-items:center;padding:2px 0;
+  }
+  .map-hscroll input[type=range], .map-vscroll input[type=range]{
+    -webkit-appearance:none;appearance:none;
+    background:transparent;outline:none;margin:0;padding:0;
+  }
+  .map-hscroll input[type=range]{ width:100%;height:12px; }
+  .map-vscroll input[type=range]{
+    width:100%;height:100%;
+    writing-mode:vertical-lr;direction:rtl;
+  }
+  input[type=range]::-webkit-slider-track{
+    background:rgba(0,255,136,0.08);height:4px;border-radius:0;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;width:24px;height:8px;
+    background:var(--phd);border:none;border-radius:0;cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-thumb:hover{ background:var(--ph); }
+
+  /* ── DEPLOYMENT PHASE OVERLAY ───────────────────────────────── */
+  .deploy-bar{
+    position:absolute;top:10px;left:50%;transform:translateX(-50%);
+    background:rgba(6,10,7,.97);border:1px solid var(--amb);
+    padding:8px 18px;display:flex;align-items:center;gap:14px;
+    z-index:20;font-size:9px;color:var(--dim);
+    backdrop-filter:blur(8px);
+  }
+  .deploy-bar b{ color:var(--amb); }
+  .deploy-zone{
+    position:absolute;pointer-events:none;z-index:5;
+    border:2px dashed;opacity:0.35;
+  }
+  .deploy-zone.p1{ border-color:var(--ph); }
+  .deploy-zone.p2{ border-color:var(--red); }
+
   /* ── AUTH / LOBBY / WAITING OVERLAY SCREENS ─────────────────── */
   .screen-overlay{
     position:fixed;inset:0;z-index:500;
@@ -360,8 +406,17 @@
   <div class="carea" id="carea">
     <canvas id="grid"></canvas>
     <div class="tip" id="tip"></div>
+    <!-- Map pan scrollbars -->
+    <div class="map-hscroll"><input type="range" id="hscroll" min="0" max="1000" value="500" oninput="onHScroll()"></div>
+    <div class="map-vscroll"><input type="range" id="vscroll" min="0" max="1000" value="500" oninput="onVScroll()"></div>
+    <!-- Deployment phase bar (hidden during normal play) -->
+    <div class="deploy-bar hidden" id="deployBar">
+      <b>⬡ DEPLOYMENT</b>
+      <span id="deployStatus">Place your mechs in your corner zone</span>
+      <button class="plan-btn" id="btnDeployDone" onclick="finishDeployment()">READY</button>
+    </div>
     <!-- WeGo plan bar -->
-    <div class="planbar" id="planbar">
+    <div class="planbar hidden" id="planbar">
       <span>YOUR PLAN: <b id="planStatus">not submitted</b></span>
       <span>OPPONENT: <b class="enem" id="enemStatus">waiting</b></span>
       <button class="plan-btn" id="btnSubmit" onclick="submitPlan()">SUBMIT PLAN</button>
@@ -781,7 +836,11 @@ function onGameUpdate(payload) {
 }
 
 function onPlanUpdate(payload) {
-  checkBothPlansSubmitted();
+  if (gamePhase === 'deployment') {
+    checkDeploymentComplete();
+  } else {
+    checkBothPlansSubmitted();
+  }
 }
 
 async function checkBothPlansSubmitted() {
@@ -949,13 +1008,12 @@ function enterGame() {
   document.querySelector('header').style.display = 'flex';
   showScreen(null);  // hide all overlays
   document.getElementById('hTurn').textContent = turnNumber;
-  resetPlanUI();
-  updatePlanBar();
   buildRoster(); updatePanel();
   if (ox === 0 && oy === 0) resize(); else draw();
-  addLog(`Game started — you are Player ${myPlayer}`, 'ok');
-  addLog('Plan your moves then click SUBMIT PLAN');
-  checkBothPlansSubmitted();
+  // Always begin with deployment phase
+  startDeployment();
+  addLog(`Match started — you are Player ${myPlayer}`, 'ok');
+  addLog('Place your mechs in your corner zone, then click READY');
 }
 
 // ── REJOIN ────────────────────────────────────────────────────────
@@ -1023,6 +1081,11 @@ let mTriKey= null;
 let hovVert= null;
 let currentPath = null;  // A* path as array of vertKeys when in move mode
 let ox = 0, oy = 0;
+// map pan via middle-mouse drag
+let isPanning = false, panStartX = 0, panStartY = 0, panOx = 0, panOy = 0;
+// deployment phase state
+let gamePhase = 'planning'; // 'deployment' | 'planning'
+let deployReady = false;
 
 // ── HEX / TRI GEOMETRY ──────────────────────────────────────────
 function hCentre(q, r) {
@@ -1283,6 +1346,194 @@ function placeMechsDefault() {
 function w2c(wx, wy) { return { x: wx + ox, y: wy + oy }; }
 function c2w(cx, cy) { return { x: cx - ox, y: cy - oy }; }
 
+// ── MAP PAN ───────────────────────────────────────────────────────
+// World bounds: how far the map extends
+function mapWorldBounds() {
+  const gw = HS * 1.5 * (COLS - 1) + HS * 2;
+  const gh = HS * S3 * ROWS;
+  return { gw, gh };
+}
+// Clamp ox/oy so the map can't be panned completely off screen
+function clampPan() {
+  const rect = canvas.getBoundingClientRect();
+  const { gw, gh } = mapWorldBounds();
+  const margin = HS * 4;
+  ox = Math.min(margin, Math.max(rect.width  - gw - margin, ox));
+  oy = Math.min(margin, Math.max(rect.height - gh - margin, oy));
+}
+function syncScrollbars() {
+  const rect = canvas.getBoundingClientRect();
+  const { gw, gh } = mapWorldBounds();
+  const margin = HS * 4;
+  const minOx = rect.width  - gw - margin, maxOx = margin;
+  const minOy = rect.height - gh - margin, maxOy = margin;
+  const hPct = (maxOx === minOx) ? 500 : ((ox - minOx) / (maxOx - minOx)) * 1000;
+  const vPct = (maxOy === minOy) ? 500 : ((oy - minOy) / (maxOy - minOy)) * 1000;
+  const hs = document.getElementById('hscroll');
+  const vs = document.getElementById('vscroll');
+  if (hs) hs.value = Math.round(Math.max(0, Math.min(1000, hPct)));
+  if (vs) vs.value = Math.round(Math.max(0, Math.min(1000, vPct)));
+}
+function onHScroll() {
+  const rect = canvas.getBoundingClientRect();
+  const { gw } = mapWorldBounds();
+  const margin = HS * 4;
+  const minOx = rect.width - gw - margin, maxOx = margin;
+  const t = document.getElementById('hscroll').value / 1000;
+  ox = minOx + t * (maxOx - minOx);
+  draw();
+}
+function onVScroll() {
+  const rect = canvas.getBoundingClientRect();
+  const { gh } = mapWorldBounds();
+  const margin = HS * 4;
+  const minOy = rect.height - gh - margin, maxOy = margin;
+  const t = document.getElementById('vscroll').value / 1000;
+  oy = minOy + t * (maxOy - minOy);
+  draw();
+}
+function panBy(dx, dy) {
+  ox += dx; oy += dy;
+  clampPan(); syncScrollbars(); draw();
+}
+
+// ── DEPLOYMENT ZONES ─────────────────────────────────────────────
+// P1 deploys in top-left corner (low q, low r)
+// P2 deploys in bottom-right corner (high q, high r)
+const DEPLOY_COLS = 5; // zone width in hexes
+const DEPLOY_ROWS = 7; // zone height in hexes
+
+function deployZoneBounds(player) {
+  if (player === 1) {
+    return { qMin: 0, qMax: DEPLOY_COLS - 1,
+             rMin: -Math.floor(0 / 2),
+             rMax: -Math.floor(0 / 2) + DEPLOY_ROWS - 1 };
+  } else {
+    const qMin = COLS - DEPLOY_COLS;
+    const qMax = COLS - 1;
+    const rOffset = ri => ri - Math.floor(qMin / 2);
+    return { qMin, qMax,
+             rMin: rOffset(ROWS - DEPLOY_ROWS),
+             rMax: rOffset(ROWS - 1) };
+  }
+}
+function inDeployZone(wx, wy, player) {
+  const { q, r } = w2hex(wx, wy);
+  const b = deployZoneBounds(player);
+  return q >= b.qMin && q <= b.qMax && r >= b.rMin && r <= b.rMax;
+}
+function drawDeployZones() {
+  if (gamePhase !== 'deployment') return;
+  [1, 2].forEach(player => {
+    const b = deployZoneBounds(player);
+    const colour = player === 1 ? 'rgba(0,255,136,0.12)' : 'rgba(255,68,68,0.12)';
+    const stroke = player === 1 ? 'rgba(0,255,136,0.5)' : 'rgba(255,68,68,0.5)';
+    ctx.fillStyle   = colour;
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth   = 1.5;
+    ctx.setLineDash([4, 4]);
+    for (let q = b.qMin; q <= b.qMax; q++) {
+      for (let ri = 0; ri < ROWS; ri++) {
+        const r = ri - Math.floor(q / 2);
+        if (r < b.rMin || r > b.rMax) continue;
+        const { x, y } = hCentre(q, r);
+        const { x: cx, y: cy } = w2c(x, y);
+        const v = hVerts(cx, cy);
+        ctx.beginPath();
+        v.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+      }
+    }
+    ctx.setLineDash([]);
+  });
+}
+
+// ── DEPLOYMENT LOGIC ─────────────────────────────────────────────
+function startDeployment() {
+  gamePhase = 'deployment';
+  deployReady = false;
+  // Place mechs off-map at (0,0) so they need to be placed
+  mechs.forEach(m => { m.wx = -9999; m.wy = -9999; });
+  document.getElementById('deployBar').classList.remove('hidden');
+  document.getElementById('planbar').classList.add('hidden');
+  document.getElementById('hPhase').innerHTML = '<span class="blink">●</span> <b style="color:var(--amb)">DEPLOYMENT</b>';
+  // Set mode to move so player can place units
+  setMode('select');
+  updateDeployStatus();
+  draw();
+}
+
+function updateDeployStatus() {
+  const myMechs = mechs.filter(m => m.player === myPlayer);
+  const placed  = myMechs.filter(m => m.wx !== -9999 && inDeployZone(m.wx, m.wy, myPlayer));
+  const total   = myMechs.length;
+  const done    = placed.length === total;
+  document.getElementById('deployStatus').textContent =
+    done ? 'All units placed — click READY' : `Place units in your zone  (${placed.length}/${total})`;
+  document.getElementById('btnDeployDone').disabled = !done;
+  deployReady = done;
+}
+
+async function finishDeployment() {
+  if (!deployReady) return;
+  showSync('Submitting deployment…');
+  // Save my deployment positions to DB as a turn plan with turn_number=0
+  const myMechs = mechs.filter(m => m.player === myPlayer);
+  const plan = {
+    submitted_at: new Date().toISOString(),
+    deployment: true,
+    mech_orders: myMechs.map(m => ({
+      mech_id: m.id, wx: m.wx, wy: m.wy, final_facing: m.facing, mp_spent: 0
+    }))
+  };
+  const { error } = await db.from('ironfield_turn_plans')
+    .upsert({ game_id: gameId, profile_id: currentUser.id,
+              turn_number: 0, plan },
+             { onConflict: 'game_id,profile_id,turn_number' })
+    .select().single();
+  if (error) { showSyncErr(); addLog('Deployment failed: ' + error.message, 'bad'); return; }
+  showSynced();
+  addLog('Deployment submitted — waiting for opponent…', 'ok');
+  document.getElementById('btnDeployDone').disabled = true;
+  document.getElementById('deployStatus').textContent = 'Waiting for opponent deployment…';
+  await checkDeploymentComplete();
+}
+
+async function checkDeploymentComplete() {
+  const { data: plans } = await db.from('ironfield_turn_plans')
+    .select('profile_id, plan').eq('game_id', gameId).eq('turn_number', 0);
+  if (!plans || plans.length < 2) return;
+  // Both deployed — apply positions and start turn 1
+  plans.forEach(row => {
+    (row.plan?.mech_orders || []).forEach(order => {
+      const m = mechs.find(x => x.id === order.mech_id);
+      if (m) { m.wx = order.wx; m.wy = order.wy; m.facing = order.final_facing; }
+    });
+  });
+  // If host, write active state to DB
+  if (isHost) {
+    const newState = captureState();
+    await db.from('ironfield_games')
+      .update({ phase: 'planning', state: newState })
+      .eq('id', gameId);
+    // Clean up deployment plans
+    await db.from('ironfield_turn_plans')
+      .delete().eq('game_id', gameId).eq('turn_number', 0);
+  }
+  enterPlanningPhase();
+}
+
+function enterPlanningPhase() {
+  gamePhase = 'planning';
+  document.getElementById('deployBar').classList.add('hidden');
+  document.getElementById('planbar').classList.remove('hidden');
+  document.getElementById('hPhase').innerHTML = '<span class="blink">●</span> <b>PLANNING</b>';
+  addLog('── TURN 1 BEGINS ──', 'ok');
+  buildRoster(); updatePanel(); draw();
+}
+
+
 // ── DRAW ─────────────────────────────────────────────────────────
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -1295,6 +1546,7 @@ function draw() {
 
   drawHexLayer();
   if (flags.tri) drawTriGrid();
+  drawDeployZones();
   drawCoverage();
   if (flags.out) drawOutlines();
   drawFacingCones();
@@ -1354,8 +1606,7 @@ function drawTriGrid() {
 
 function drawCoverage() {
   mechs.forEach(mech => {
-    const { full, half } = getCoverage(mech);
-    const isSel = mech.id === selId, isP1 = mech.player === 1;
+    if (mech.wx === -9999) return; // not yet deployed
 
     const fullFill   = isP1 ? (isSel?'rgba(0,255,136,0.28)':'rgba(0,255,136,0.14)')
                              : (isSel?'rgba(255,68,68,0.28)':'rgba(255,68,68,0.14)');
@@ -1388,8 +1639,7 @@ function drawCoverage() {
 
 function drawOutlines() {
   mechs.forEach(mech => {
-    const isSel = mech.id === selId, isP1 = mech.player === 1;
-    const { x: cx, y: cy } = w2c(mech.wx, mech.wy);
+    if (mech.wx === -9999) return;
     const rot = templateRot(mech.facing);
     const rotRad = rot * Math.PI / 180;
 
@@ -1412,6 +1662,7 @@ function drawOutlines() {
 
 function drawFacingCones() {
   mechs.forEach(mech => {
+    if (mech.wx === -9999) return;
     const isSel = mech.id === selId, isP1 = mech.player === 1;
     const { x: cx, y: cy } = w2c(mech.wx, mech.wy);
 
@@ -1825,6 +2076,41 @@ canvas.addEventListener('click', e => {
   const rect = canvas.getBoundingClientRect();
   const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
   const { x: wx, y: wy } = c2w(cx, cy);
+
+  // ── DEPLOYMENT PHASE: click to place selected mech ───────────────
+  if (gamePhase === 'deployment') {
+    const myMechs = mechs.filter(m => m.player === myPlayer);
+    // Find near mech (already placed)
+    const nm = myMechs.reduce((b, m) => {
+      if (m.wx === -9999) return b;
+      const d = Math.hypot(wx-m.wx, wy-m.wy);
+      return (!b || d < b.d) ? { m, d } : b;
+    }, null);
+    const nearPlaced = nm && nm.d < OUTLINE_R * 0.55 ? nm.m : null;
+
+    if (selId) {
+      // Place selected mech at click location if inside zone
+      const m = mechs.find(x => x.id === selId);
+      if (m && m.player === myPlayer) {
+        if (!inDeployZone(wx, wy, myPlayer)) {
+          addLog(`${m.name}: must be placed in your deployment zone`, 'bad'); return;
+        }
+        const nv = snapToVert(wx, wy);
+        const dest = nv && Math.hypot(nv.wx-wx, nv.wy-wy) < HS * 0.55 ? nv : { wx, wy };
+        m.wx = dest.wx; m.wy = dest.wy;
+        selId = null;
+        addLog(`${m.name} deployed`, 'ok');
+        updateDeployStatus(); updatePanel(); buildRoster(); draw();
+        return;
+      }
+    }
+    // Select a mech (placed or unplaced)
+    const unplaced = myMechs.find(m => m.wx === -9999);
+    if (nearPlaced) { selMech(nearPlaced.id); }
+    else if (unplaced) { selMech(unplaced.id); addLog(`Select where to place ${unplaced.name}`, 'ok'); }
+    draw(); return;
+  }
+
   const nm = mechs.reduce((b, m) => {
     const d = Math.hypot(wx-m.wx, wy-m.wy);
     return (!b || d < b.d) ? { m, d } : b;
@@ -1881,6 +2167,49 @@ canvas.addEventListener('contextmenu', e => {
   selId = null;
   updatePanel(); buildRoster(); draw();
 });
+
+// ── MIDDLE-MOUSE / RIGHT-DRAG PAN ─────────────────────────────────
+canvas.addEventListener('mousedown', e => {
+  if (e.button === 1) { // middle mouse
+    e.preventDefault();
+    isPanning = true; panStartX = e.clientX; panStartY = e.clientY;
+    panOx = ox; panOy = oy;
+    canvas.style.cursor = 'grabbing';
+  }
+});
+canvas.addEventListener('mousemove', e => {
+  if (isPanning) {
+    ox = panOx + (e.clientX - panStartX);
+    oy = panOy + (e.clientY - panStartY);
+    clampPan(); syncScrollbars(); draw();
+  }
+});
+canvas.addEventListener('mouseup', e => {
+  if (e.button === 1) { isPanning = false; canvas.style.cursor = 'crosshair'; }
+});
+canvas.addEventListener('mouseleave', e => {
+  if (isPanning) { isPanning = false; canvas.style.cursor = 'crosshair'; }
+});
+
+// ── TOUCH PAN (two-finger) ────────────────────────────────────────
+let touchPanStart = null;
+canvas.addEventListener('touchstart', e => {
+  if (e.touches.length === 2) {
+    touchPanStart = { x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+                      y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+                      ox, oy };
+  }
+}, { passive: true });
+canvas.addEventListener('touchmove', e => {
+  if (e.touches.length === 2 && touchPanStart) {
+    const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    ox = touchPanStart.ox + (mx - touchPanStart.x);
+    oy = touchPanStart.oy + (my - touchPanStart.y);
+    clampPan(); syncScrollbars(); draw();
+  }
+}, { passive: true });
+canvas.addEventListener('touchend', () => { touchPanStart = null; });
 document.addEventListener('keydown', e => {
   if (!selId) return;
   const m = mechs.find(x => x.id === selId);
@@ -1913,6 +2242,7 @@ function resize() {
     oy = (rect.height - gh) / 2 + HS * S3 * 0.25;
     placeMechsDefault();
   }
+  syncScrollbars();
   draw();
 }
 
