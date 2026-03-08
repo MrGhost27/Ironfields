@@ -400,6 +400,7 @@
   <div class="userbar">
     <span>PILOT: <b id="hUser">—</b></span>
     <button class="auth-btn sec" style="padding:3px 8px;font-size:8px;" onclick="returnToLobby()">LOBBY</button>
+    <button class="auth-btn sec" style="padding:3px 8px;font-size:8px;color:var(--red);border-color:rgba(255,68,68,0.4);" onclick="confirmEndGame()">END GAME</button>
   </div>
 </header>
 
@@ -786,17 +787,60 @@ async function doStartGame() {
   await logEvent('start');
 }
 
-function leaveWaiting() {
+async function leaveWaiting() {
   if (realtimeChan) { db.removeChannel(realtimeChan); realtimeChan = null; }
-  releaseSeat().catch(()=>{});
+  if (gameId) {
+    const gid = gameId;
+    if (isHost) {
+      // Host abandoning the lobby — delete the game entirely
+      await db.from('ironfield_turn_plans').delete().eq('game_id', gid);
+      await db.from('ironfield_events').delete().eq('game_id', gid);
+      await db.from('ironfield_games').delete().eq('id', gid);
+    } else {
+      // Non-host just releases their seat
+      releaseSeat().catch(()=>{});
+    }
+  }
+  localStorage.removeItem('ironfield_game_' + (currentUser?.id ?? ''));
   resetMultiState();
   showScreen('scr-lobby');
 }
 
 function returnToLobby() {
+  // Quietly leave (mid-game lobby button) — mark game as abandoned but keep data briefly
   if (realtimeChan) { db.removeChannel(realtimeChan); realtimeChan = null; }
+  if (gameId) {
+    db.from('ironfield_games')
+      .update({ status: 'abandoned' })
+      .eq('id', gameId)
+      .then(() => {});
+  }
+  localStorage.removeItem('ironfield_game_' + (currentUser?.id ?? ''));
   resetMultiState();
   showScreen('scr-lobby');
+}
+
+function confirmEndGame() {
+  if (confirm('End this game and delete all match data? This cannot be undone.')) {
+    doEndGame();
+  }
+}
+
+async function doEndGame() {
+  showSync('Cleaning up…');
+  if (realtimeChan) { db.removeChannel(realtimeChan); realtimeChan = null; }
+  if (gameId) {
+    const gid = gameId;
+    // Delete child rows first (FK constraints), then the game itself
+    await db.from('ironfield_turn_plans').delete().eq('game_id', gid);
+    await db.from('ironfield_events').delete().eq('game_id', gid);
+    await db.from('ironfield_games').delete().eq('id', gid);
+  }
+  localStorage.removeItem('ironfield_game_' + (currentUser?.id ?? ''));
+  showSynced();
+  resetMultiState();
+  showScreen('scr-lobby');
+  addLog('Game ended and data deleted.', 'ok');
 }
 
 // ── REALTIME ──────────────────────────────────────────────────────
