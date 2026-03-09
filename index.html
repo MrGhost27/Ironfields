@@ -2151,15 +2151,10 @@ function buildRoster() {
   list.innerHTML = '';
   const deploying = gamePhase === 'deployment';
 
-  // Debug strip — always visible so we can diagnose roster issues
-  const dbg = document.createElement('div');
-  dbg.style.cssText = 'font-size:8px;color:#555;padding:2px 6px;letter-spacing:1px;';
-  dbg.textContent = `P${myPlayer ?? '?'} | ${deploying ? 'DEPLOY' : 'PLAN'} | ${mechs.length} mechs`;
-  list.appendChild(dbg);
-
   mechs.forEach(mech => {
-    const isSel = mech.id === selId, isP1 = mech.player === 1;
-    const cls   = MECH_CLASSES[mech.cls];
+    const isSel  = mech.id === selId;
+    const isP1   = mech.player === 1;
+    const cls    = MECH_CLASSES[mech.cls];
     const isMine = mech.player === myPlayer;
     let inner;
 
@@ -2172,11 +2167,11 @@ function buildRoster() {
         statusLabel = '✓ DEPLOYED'; statusColour = 'var(--ph)';
       } else {
         statusLabel = isSel ? 'CLICK ZONE' : 'NOT PLACED';
-        statusColour = isSel ? 'var(--amb)' : 'var(--dim)';
+        statusColour = isSel ? 'var(--amb)' : '#00aa55';
       }
-      inner = `<div class="mn">${mech.name}</div>
+      inner = `<div class="mn" style="color:${isMine?(isP1?'var(--ph)':'var(--red)'):'#334433'}">${mech.name}</div>
         <div class="ms">
-          <div class="sr"><span>CLASS</span><span class="v">${cls?.label ?? mech.cls}</span></div>
+          <div class="sr"><span>CLASS</span><span class="v" style="color:#00aa55">${cls?.label ?? mech.cls}</span></div>
           <div class="sr"><span>STATUS</span><span class="v" style="color:${statusColour}">${statusLabel}</span></div>
         </div>`;
     } else {
@@ -2202,6 +2197,11 @@ function buildRoster() {
 
     const c = document.createElement('div');
     c.className = `mc ${isP1?'p1':'p2'} ${isSel?'sel':''}`;
+    if (deploying && isMine) {
+      // Make own mechs clearly visible — override the near-invisible default border
+      c.style.borderColor = isP1 ? 'rgba(0,255,136,0.3)' : 'rgba(255,68,68,0.3)';
+      c.style.background  = isP1 ? 'rgba(0,255,136,0.05)' : 'rgba(255,68,68,0.05)';
+    }
     c.innerHTML = inner;
 
     if (deploying && isMine) {
