@@ -787,18 +787,17 @@ function copyCode() {
 
 async function doStartGame() {
   showSync('Starting…');
-  const { error, data: updatedGame } = await db.from('ironfield_games')
+  const { error } = await db.from('ironfield_games')
     .update({ status: 'active', phase: 'deployment', state: { mechs: [], turn: 1 } })
-    .eq('id', gameId)
-    .select().single();
+    .eq('id', gameId);
   if (error) { showSyncErr(); return; }
-  showSynced();
-  // Ensure myPlayer is set from the DB row before rendering the roster
-  if (updatedGame) {
-    myPlayer = updatedGame.p1_id === currentUser.id ? 1
-             : updatedGame.p2_id === currentUser.id ? 2 : myPlayer;
-    isHost   = updatedGame.host_id === currentUser.id;
+  // Fetch the row explicitly so we can read p1_id / p2_id regardless of RLS SELECT policy
+  const { data: g } = await db.from('ironfield_games').select('*').eq('id', gameId).single();
+  if (g) {
+    myPlayer = g.p1_id === currentUser.id ? 1 : g.p2_id === currentUser.id ? 2 : myPlayer;
+    isHost   = g.host_id === currentUser.id;
   }
+  showSynced();
   enterGame();
   await logEvent('start');
 }
@@ -2151,6 +2150,13 @@ function buildRoster() {
   const list = document.getElementById('mlist');
   list.innerHTML = '';
   const deploying = gamePhase === 'deployment';
+
+  // Debug strip — always visible so we can diagnose roster issues
+  const dbg = document.createElement('div');
+  dbg.style.cssText = 'font-size:8px;color:#555;padding:2px 6px;letter-spacing:1px;';
+  dbg.textContent = `P${myPlayer ?? '?'} | ${deploying ? 'DEPLOY' : 'PLAN'} | ${mechs.length} mechs`;
+  list.appendChild(dbg);
+
   mechs.forEach(mech => {
     const isSel = mech.id === selId, isP1 = mech.player === 1;
     const cls   = MECH_CLASSES[mech.cls];
@@ -2204,31 +2210,37 @@ function buildRoster() {
         selId = isSel ? null : mech.id;
         updateDeployStatus(); buildRoster(); draw();
       };
-      // Undeploy button for placed mechs
+      // Undeploy (✕) button — only on placed mechs
       if (isPlaced) {
         const xBtn = document.createElement('button');
         xBtn.textContent = '✕';
-        xBtn.title = 'Remove from map';
-        xBtn.style.cssText = `position:absolute;top:4px;right:4px;
-          background:none;border:1px solid rgba(255,68,68,0.4);
-          color:rgba(255,68,68,0.7);font-size:9px;line-height:1;
-          padding:1px 4px;cursor:pointer;letter-spacing:0;`;
-        xBtn.onmouseenter = () => xBtn.style.color = 'rgba(255,68,68,1)';
-        xBtn.onmouseleave = () => xBtn.style.color = 'rgba(255,68,68,0.7)';
+        xBtn.title = 'Return to roster';
+        xBtn.style.cssText = [
+          'position:absolute', 'top:4px', 'right:4px',
+          'background:none', 'border:1px solid rgba(255,68,68,0.45)',
+          'color:rgba(255,68,68,0.75)', 'font-size:9px', 'line-height:1',
+          'padding:2px 5px', 'cursor:pointer', 'letter-spacing:0',
+          'font-family:monospace'
+        ].join(';');
+        xBtn.onmouseenter = () => { xBtn.style.color='rgba(255,68,68,1)'; xBtn.style.borderColor='rgba(255,68,68,0.9)'; };
+        xBtn.onmouseleave = () => { xBtn.style.color='rgba(255,68,68,0.75)'; xBtn.style.borderColor='rgba(255,68,68,0.45)'; };
         xBtn.onclick = (e) => {
           e.stopPropagation();
           mech.wx = -9999; mech.wy = -9999;
           if (selId === mech.id) selId = null;
+          addLog(`${mech.name} returned to roster`, 'ok');
           updateDeployStatus(); buildRoster(); draw();
         };
-        c.style.position = 'relative';
         c.appendChild(xBtn);
       }
     } else if (!deploying) {
       c.onclick = () => selMech(mech.id);
-    } else {
-      c.style.opacity = '0.35';
+    } else if (deploying && !isMine) {
+      // Enemy mechs during deployment — visible but dimmed and unclickable
+      c.style.opacity = '0.3';
+      c.style.cursor  = 'default';
     }
+    // Note: if myPlayer is null (edge case), all mechs show at full opacity so nothing is hidden
     list.appendChild(c);
   });
 }
