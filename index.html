@@ -787,21 +787,20 @@ function copyCode() {
 }
 
 function buildStartState() {
-  // Pre-placed starting positions — skips deployment phase entirely.
-  // Coordinates derived from hCentre(q, r) with HS=23.
+  // Pre-placed starting positions — both forces in the horizontal centre of the map,
+  // spread across left (q=5) and right (q=23) columns so they face each other.
   const HS = 23, S3 = Math.sqrt(3);
-  const hc = (q, r) => ({ x: HS*1.5*q, y: HS*(S3*r + S3/2*q) });
-  const p1pos = [{q:3,r:1},{q:3,r:4},{q:3,r:7}];
-  const p2pos = [{q:25,r:7},{q:25,r:10},{q:25,r:13}];
+  const hc = (q, r) => ({ x: round2(HS*1.5*q), y: round2(HS*(S3*r + S3/2*q)) });
+  const round2 = v => Math.round(v * 100) / 100;
   return {
     turn: 1,
     mechs: [
-      { id:'p1a', player:1, name:'LANCE-1A', cls:'scout',  facing:0,   mpSpent:0, ...hc(...Object.values(p1pos[0])) },
-      { id:'p1b', player:1, name:'LANCE-1B', cls:'medium', facing:0,   mpSpent:0, ...hc(...Object.values(p1pos[1])) },
-      { id:'p1c', player:1, name:'LANCE-1C', cls:'heavy',  facing:0,   mpSpent:0, ...hc(...Object.values(p1pos[2])) },
-      { id:'p2a', player:2, name:'LANCE-2A', cls:'scout',  facing:180, mpSpent:0, ...hc(...Object.values(p2pos[0])) },
-      { id:'p2b', player:2, name:'LANCE-2B', cls:'medium', facing:180, mpSpent:0, ...hc(...Object.values(p2pos[1])) },
-      { id:'p2c', player:2, name:'LANCE-2C', cls:'heavy',  facing:180, mpSpent:0, ...hc(...Object.values(p2pos[2])) },
+      { id:'p1a', player:1, name:'LANCE-1A', cls:'scout',  facing:  0, mpSpent:0, ...hc(5, 7) },
+      { id:'p1b', player:1, name:'LANCE-1B', cls:'medium', facing:  0, mpSpent:0, ...hc(5, 9) },
+      { id:'p1c', player:1, name:'LANCE-1C', cls:'heavy',  facing:  0, mpSpent:0, ...hc(5,11) },
+      { id:'p2a', player:2, name:'LANCE-2A', cls:'scout',  facing:180, mpSpent:0, ...hc(23, 7) },
+      { id:'p2b', player:2, name:'LANCE-2B', cls:'medium', facing:180, mpSpent:0, ...hc(23, 9) },
+      { id:'p2c', player:2, name:'LANCE-2C', cls:'heavy',  facing:180, mpSpent:0, ...hc(23,11) },
     ]
   };
 }
@@ -1097,21 +1096,27 @@ function enterGame() {
   document.querySelector('header').style.display = 'flex';
   showScreen(null);
   document.getElementById('hTurn').textContent = turnNumber;
-  // Always re-centre the map for each new game (ox/oy reset to 0 by resetMultiState)
-  const careaEl = document.getElementById('carea');
-  const rect    = careaEl.getBoundingClientRect();
-  const gridEl  = document.getElementById('grid');
-  gridEl.width  = rect.width;
-  gridEl.height = rect.height;
-  const S3l = Math.sqrt(3), HS_l = 23;
-  const gw = HS_l * 1.5 * (29-1) + HS_l * 2;
-  const gh = HS_l * S3l * 21;
-  ox = (rect.width  - gw) / 2 + HS_l;
-  oy = (rect.height - gh) / 2 + HS_l * S3l * 0.25;
-  syncScrollbars();
   loadStateFromGame(startStateCache || { mechs: [], turn: 1 });
-  enterPlanningPhase();
-  addLog(`Match started — you are Player ${myPlayer}`, 'ok');
+  // Defer canvas setup one frame so flex layout has been computed
+  requestAnimationFrame(() => {
+    const careaEl = document.getElementById('carea');
+    const rect    = careaEl.getBoundingClientRect();
+    const gridEl  = document.getElementById('grid');
+    gridEl.width  = rect.width;
+    gridEl.height = rect.height;
+    // Centre the view on the midpoint between both forces rather than the map centre
+    const myMechs    = mechs.filter(m => m.player === myPlayer);
+    const allPlaced  = mechs.filter(m => m.wx !== -9999 && m.wx !== 0);
+    const targets    = allPlaced.length ? allPlaced : mechs;
+    const midWx = targets.reduce((s, m) => s + m.wx, 0) / targets.length;
+    const midWy = targets.reduce((s, m) => s + m.wy, 0) / targets.length;
+    ox = rect.width  / 2 - midWx;
+    oy = rect.height / 2 - midWy;
+    clampPan();
+    syncScrollbars();
+    enterPlanningPhase();
+    addLog(`Match started — you are Player ${myPlayer}`, 'ok');
+  });
 }
 
 // ── REJOIN ────────────────────────────────────────────────────────
