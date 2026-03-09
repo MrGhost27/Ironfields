@@ -758,23 +758,27 @@ function copyCode() {
 }
 
 function buildStartState() {
-  // P1 spawns top-left, P2 spawns top-right, each spread vertically so all 3 are visible.
-  // Grid is COLS=29 (q: 0-28), ROWS=21. r offset accounts for hex column stagger.
-  const HS = 23, S3 = Math.sqrt(3);
-  const hc = (q, r) => ({ x: round2(HS*1.5*q), y: round2(HS*(S3*r + S3/2*q)) });
-  const round2 = v => Math.round(v * 100) / 100;
-  // Top row for each column: r0 = -floor(q/2)
-  const p1q = 2,  p1r0 = -Math.floor(p1q / 2);
-  const p2q = 26, p2r0 = -Math.floor(p2q / 2);
+  // Spawn positions defined as hex (q, r) coordinates — converted to snapped vertices
+  // so positions are guaranteed consistent with the movement system.
+  // P1: left edge, P2: right edge. Rows offset from column top to stay on-screen.
+  const spawnHex = (q, r) => {
+    const { x, y } = hCentre(q, r);
+    const v = snapToVert(x, y);  // snap to nearest vertex (hex centres are valid vertices)
+    return { wx: v.wx, wy: v.wy };
+  };
+
+  const p1q = 3,  p1r0 = -Math.floor(p1q / 2) + 2;   // left side
+  const p2q = 25, p2r0 = -Math.floor(p2q / 2) + 2;   // right side
+
   return {
     turn: 1,
     mechs: [
-      { id:'p1a', player:1, name:'LANCE-1A', cls:'scout',  facing: 90, mpSpent:0, ...hc(p1q, p1r0)   },
-      { id:'p1b', player:1, name:'LANCE-1B', cls:'medium', facing: 90, mpSpent:0, ...hc(p1q, p1r0+3) },
-      { id:'p1c', player:1, name:'LANCE-1C', cls:'heavy',  facing: 90, mpSpent:0, ...hc(p1q, p1r0+6) },
-      { id:'p2a', player:2, name:'LANCE-2A', cls:'scout',  facing:270, mpSpent:0, ...hc(p2q, p2r0)   },
-      { id:'p2b', player:2, name:'LANCE-2B', cls:'medium', facing:270, mpSpent:0, ...hc(p2q, p2r0+3) },
-      { id:'p2c', player:2, name:'LANCE-2C', cls:'heavy',  facing:270, mpSpent:0, ...hc(p2q, p2r0+6) },
+      { id:'p1a', player:1, name:'LANCE-1A', cls:'scout',  facing: 90, mpSpent:0, ...spawnHex(p1q, p1r0)   },
+      { id:'p1b', player:1, name:'LANCE-1B', cls:'medium', facing: 90, mpSpent:0, ...spawnHex(p1q, p1r0+4) },
+      { id:'p1c', player:1, name:'LANCE-1C', cls:'heavy',  facing: 90, mpSpent:0, ...spawnHex(p1q, p1r0+8) },
+      { id:'p2a', player:2, name:'LANCE-2A', cls:'scout',  facing:270, mpSpent:0, ...spawnHex(p2q, p2r0)   },
+      { id:'p2b', player:2, name:'LANCE-2B', cls:'medium', facing:270, mpSpent:0, ...spawnHex(p2q, p2r0+4) },
+      { id:'p2c', player:2, name:'LANCE-2C', cls:'heavy',  facing:270, mpSpent:0, ...spawnHex(p2q, p2r0+8) },
     ]
   };
 }
