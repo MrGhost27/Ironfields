@@ -489,6 +489,7 @@ let currentProfile = null;
 let gameId         = null;
 let joinCode       = null;
 let myPlayer       = null;   // 1 or 2
+let startStateCache = null;  // game state passed from onGameUpdate → enterGame
 let isHost         = false;
 let realtimeChan   = null;
 let myPlanId       = null;   // id of my submitted turn_plan row
@@ -785,13 +786,34 @@ function copyCode() {
   });
 }
 
+function buildStartState() {
+  // Pre-placed starting positions — skips deployment phase entirely.
+  // Coordinates derived from hCentre(q, r) with HS=23.
+  const HS = 23, S3 = Math.sqrt(3);
+  const hc = (q, r) => ({ x: HS*1.5*q, y: HS*(S3*r + S3/2*q) });
+  const p1pos = [{q:3,r:1},{q:3,r:4},{q:3,r:7}];
+  const p2pos = [{q:25,r:7},{q:25,r:10},{q:25,r:13}];
+  return {
+    turn: 1,
+    mechs: [
+      { id:'p1a', player:1, name:'LANCE-1A', cls:'scout',  facing:0,   mpSpent:0, ...hc(...Object.values(p1pos[0])) },
+      { id:'p1b', player:1, name:'LANCE-1B', cls:'medium', facing:0,   mpSpent:0, ...hc(...Object.values(p1pos[1])) },
+      { id:'p1c', player:1, name:'LANCE-1C', cls:'heavy',  facing:0,   mpSpent:0, ...hc(...Object.values(p1pos[2])) },
+      { id:'p2a', player:2, name:'LANCE-2A', cls:'scout',  facing:180, mpSpent:0, ...hc(...Object.values(p2pos[0])) },
+      { id:'p2b', player:2, name:'LANCE-2B', cls:'medium', facing:180, mpSpent:0, ...hc(...Object.values(p2pos[1])) },
+      { id:'p2c', player:2, name:'LANCE-2C', cls:'heavy',  facing:180, mpSpent:0, ...hc(...Object.values(p2pos[2])) },
+    ]
+  };
+}
+
 async function doStartGame() {
   showSync('Starting…');
+  const startState = buildStartState();
   const { error } = await db.from('ironfield_games')
-    .update({ status: 'active', phase: 'deployment', state: { mechs: [], turn: 1 } })
+    .update({ status: 'active', phase: 'planning', state: startState })
     .eq('id', gameId);
   if (error) { showSyncErr(); return; }
-  // Fetch the row explicitly so we can read p1_id / p2_id regardless of RLS SELECT policy
+  // Fetch the row explicitly so we can read p1_id/p2_id reliably
   const { data: g } = await db.from('ironfield_games').select('*').eq('id', gameId).single();
   if (g) {
     myPlayer = g.p1_id === currentUser.id ? 1 : g.p2_id === currentUser.id ? 2 : myPlayer;
@@ -884,12 +906,12 @@ function onGameUpdate(payload) {
   if (inWaiting) {
     renderWaiting();
     if (g.status === 'active') {
-      // Only set myPlayer here if it isn't already correct — claimSeat sets it earlier
       if (!myPlayer) {
         myPlayer = g.p1_id === currentUser.id ? 1
                  : g.p2_id === currentUser.id ? 2 : null;
       }
       isHost = g.host_id === currentUser.id;
+      startStateCache = g.state;   // pass state through to enterGame
       enterGame();
     }
     return;
@@ -1087,9 +1109,9 @@ function enterGame() {
   ox = (rect.width  - gw) / 2 + HS_l;
   oy = (rect.height - gh) / 2 + HS_l * S3l * 0.25;
   syncScrollbars();
-  startDeployment();
+  loadStateFromGame(startStateCache || { mechs: [], turn: 1 });
+  enterPlanningPhase();
   addLog(`Match started — you are Player ${myPlayer}`, 'ok');
-  addLog('Select a unit from the roster, then click your zone to place it');
 }
 
 // ── REJOIN ────────────────────────────────────────────────────────
@@ -1138,6 +1160,7 @@ function resetMultiState() {
   realtimeChan = null;
   turnNumber = 1;
   gamePhase = 'planning';
+  startStateCache = null;
   ox = 0; oy = 0;  // force canvas re-centre on next enterGame
   mechs.forEach(m => { m.wx = 0; m.wy = 0; m.mpSpent = 0; });
   selId = null;
