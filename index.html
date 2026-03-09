@@ -163,29 +163,6 @@
     background:var(--phd);border:none;border-radius:0;cursor:pointer;
   }
   input[type=range]::-webkit-slider-thumb:hover{ background:var(--ph); }
-
-  /* ── DEPLOYMENT PHASE OVERLAY ───────────────────────────────── */
-  .deploy-bar{
-    position:absolute;top:52px;left:50%;transform:translateX(-50%);
-    background:rgba(6,10,7,.97);border:1px solid var(--amb);
-    box-shadow:0 0 18px rgba(255,170,0,0.18);
-    padding:10px 22px;display:flex;align-items:center;gap:18px;
-    z-index:20;font-size:10px;letter-spacing:1px;color:var(--dim);
-    backdrop-filter:blur(8px);white-space:nowrap;
-  }
-  .deploy-bar b{ color:var(--amb);font-size:11px; }
-  #deployStatus{ color:#ccc; min-width:260px; text-align:center; }
-  #btnDeployDone{ background:var(--amb) !important; color:#000 !important;
-    font-weight:700; padding:5px 16px !important; }
-  #btnDeployDone:disabled{ background:rgba(255,170,0,0.15) !important;
-    color:var(--amb) !important; cursor:default; }
-  .deploy-zone{
-    position:absolute;pointer-events:none;z-index:5;
-    border:2px dashed;opacity:0.35;
-  }
-  .deploy-zone.p1{ border-color:var(--ph); }
-  .deploy-zone.p2{ border-color:var(--red); }
-
   /* ── AUTH / LOBBY / WAITING OVERLAY SCREENS ─────────────────── */
   .screen-overlay{
     position:fixed;inset:0;z-index:500;
@@ -419,12 +396,6 @@
     <!-- Map pan scrollbars -->
     <div class="map-hscroll"><input type="range" id="hscroll" min="0" max="1000" value="500" oninput="onHScroll()"></div>
     <div class="map-vscroll"><input type="range" id="vscroll" min="0" max="1000" value="500" oninput="onVScroll()"></div>
-    <!-- Deployment phase bar (hidden during normal play) -->
-    <div class="deploy-bar hidden" id="deployBar">
-      <b>⬡ DEPLOYMENT</b>
-      <span id="deployStatus">Place your mechs in your corner zone</span>
-      <button class="plan-btn" id="btnDeployDone" onclick="finishDeployment()">READY</button>
-    </div>
     <!-- WeGo plan bar -->
     <div class="planbar hidden" id="planbar">
       <span>YOUR PLAN: <b id="planStatus">not submitted</b></span>
@@ -925,12 +896,10 @@ function onGameUpdate(payload) {
 }
 
 function onPlanUpdate(payload) {
-  if (gamePhase === 'deployment') {
-    checkDeploymentComplete();
-  } else {
-    checkBothPlansSubmitted();
-  }
+  checkBothPlansSubmitted();
 }
+
+
 
 async function checkBothPlansSubmitted() {
   const { data: plans } = await db.from('ironfield_turn_plans')
@@ -1164,7 +1133,6 @@ function resetMultiState() {
   myPlanSubmitted = false; enemyPlanSubmitted = false;
   realtimeChan = null;
   turnNumber = 1;
-  gamePhase = 'planning';
   startStateCache = null;
   ox = 0; oy = 0;  // force canvas re-centre on next enterGame
   mechs.forEach(m => { m.wx = 0; m.wy = 0; m.mpSpent = 0; });
@@ -1205,7 +1173,6 @@ let ox = 0, oy = 0;
 let isPanning = false, panStartX = 0, panStartY = 0, panOx = 0, panOy = 0;
 // deployment phase state
 let gamePhase = 'planning'; // 'deployment' | 'planning'
-let deployReady = false;
 
 // ── HEX / TRI GEOMETRY ──────────────────────────────────────────
 function hCentre(q, r) {
@@ -1520,178 +1487,12 @@ function panBy(dx, dy) {
 // ── DEPLOYMENT ZONES ─────────────────────────────────────────────
 // P1 deploys in top-left corner (low q, low r)
 // P2 deploys in bottom-right corner (high q, high r)
-const DEPLOY_COLS = 5; // zone width in hexes
-const DEPLOY_ROWS = 7; // zone height in hexes
-
-function deployZoneBounds(player) {
-  if (player === 1) {
-    return { qMin: 0, qMax: DEPLOY_COLS - 1,
-             rMin: -Math.floor(0 / 2),
-             rMax: -Math.floor(0 / 2) + DEPLOY_ROWS - 1 };
-  } else {
-    const qMin = COLS - DEPLOY_COLS;
-    const qMax = COLS - 1;
-    const rOffset = ri => ri - Math.floor(qMin / 2);
-    return { qMin, qMax,
-             rMin: rOffset(ROWS - DEPLOY_ROWS),
-             rMax: rOffset(ROWS - 1) };
-  }
-}
-function inDeployZone(wx, wy, player) {
-  const { q, r } = w2hex(wx, wy);
-  const b = deployZoneBounds(player);
-  return q >= b.qMin && q <= b.qMax && r >= b.rMin && r <= b.rMax;
-}
-function drawDeployZones() {
-  if (gamePhase !== 'deployment') return;
-  const placing = !!selId;  // mech is selected, waiting to be dropped
-
-  [1, 2].forEach(player => {
-    const b = deployZoneBounds(player);
-    const isMine = player === myPlayer;
-
-    // My zone brightens when I have a unit ready to place
-    const fill   = isMine
-      ? (placing ? (player===1?'rgba(0,255,136,0.20)':'rgba(255,68,68,0.20)')
-                 : (player===1?'rgba(0,255,136,0.07)':'rgba(255,68,68,0.07)'))
-      : 'rgba(80,80,80,0.06)';
-    const stroke = isMine
-      ? (placing ? (player===1?'rgba(0,255,136,1.0)':'rgba(255,68,68,1.0)')
-                 : (player===1?'rgba(0,255,136,0.4)':'rgba(255,68,68,0.4)'))
-      : 'rgba(80,80,80,0.2)';
-
-    ctx.fillStyle   = fill;
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth   = isMine && placing ? 2 : 1;
-    ctx.setLineDash(isMine && placing ? [] : [5, 4]);
-
-    for (let q = b.qMin; q <= b.qMax; q++) {
-      for (let ri = 0; ri < ROWS; ri++) {
-        const r = ri - Math.floor(q / 2);
-        if (r < b.rMin || r > b.rMax) continue;
-        const { x, y } = hCentre(q, r);
-        const { x: cx, y: cy } = w2c(x, y);
-        const v = hVerts(cx, cy);
-        ctx.beginPath();
-        v.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
-        ctx.closePath();
-        ctx.fill(); ctx.stroke();
-      }
-    }
-    ctx.setLineDash([]);
-
-    // Zone label
-    const midQ = Math.floor((b.qMin + b.qMax) / 2);
-    const midR = Math.floor((b.rMin + b.rMax) / 2);
-    const { x: lx, y: ly } = hCentre(midQ, midR);
-    const { x: lcx, y: lcy } = w2c(lx, ly);
-    ctx.font      = 'bold 9px "Share Tech Mono", monospace';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = isMine
-      ? (player===1 ? 'rgba(0,255,136,0.8)' : 'rgba(255,68,68,0.8)')
-      : 'rgba(120,120,120,0.5)';
-    ctx.fillText(isMine ? 'YOUR ZONE' : 'ENEMY ZONE', lcx, lcy);
-  });
-
-  // Snap-point preview when hovering with a unit selected
-  if (hovVert && selId) {
-    const inZone = inDeployZone(hovVert.wx, hovVert.wy, myPlayer);
-    const { x: vx, y: vy } = w2c(hovVert.wx, hovVert.wy);
-    ctx.beginPath();
-    ctx.arc(vx, vy, HS * 0.4, 0, Math.PI * 2);
-    ctx.fillStyle   = inZone ? 'rgba(0,255,136,0.45)' : 'rgba(255,68,68,0.35)';
-    ctx.strokeStyle = inZone ? 'rgba(0,255,136,1.0)'  : 'rgba(255,68,68,0.9)';
-    ctx.lineWidth   = 2;
-    ctx.fill(); ctx.stroke();
-  }
-}
 
 // ── DEPLOYMENT LOGIC ─────────────────────────────────────────────
-function startDeployment() {
-  gamePhase = 'deployment';
-  deployReady = false;
-  selId = null;
-  mechs.forEach(m => { m.wx = -9999; m.wy = -9999; m.mpSpent = 0; });
-  // Hide gameplay toolbar — it has no meaning during deployment
-  document.getElementById('tbar').style.display = 'none';
-  document.getElementById('deployBar').classList.remove('hidden');
-  document.getElementById('planbar').classList.add('hidden');
-  document.getElementById('hPhase').innerHTML =
-    '<span class="blink" style="color:var(--amb)">●</span> <b style="color:var(--amb)">DEPLOYMENT</b>';
-  updateDeployStatus();
-  buildRoster();
-  draw();
-}
-
-function updateDeployStatus() {
-  const myMechs = mechs.filter(m => m.player === myPlayer);
-  const placed  = myMechs.filter(m => m.wx !== -9999 && inDeployZone(m.wx, m.wy, myPlayer));
-  const total   = myMechs.length;
-  const done    = placed.length === total;
-  const sel     = mechs.find(x => x.id === selId);
-  let msg;
-  if (done)      msg = 'All units placed — click READY when set';
-  else if (sel)  msg = `Click your zone to place ${sel.name}`;
-  else           msg = `Select a unit from the roster  (${placed.length} / ${total} placed)`;
-  document.getElementById('deployStatus').textContent = msg;
-  document.getElementById('btnDeployDone').disabled = !done;
-  deployReady = done;
-}
-
-async function finishDeployment() {
-  if (!deployReady) return;
-  showSync('Submitting deployment…');
-  // Save my deployment positions to DB as a turn plan with turn_number=0
-  const myMechs = mechs.filter(m => m.player === myPlayer);
-  const plan = {
-    submitted_at: new Date().toISOString(),
-    deployment: true,
-    mech_orders: myMechs.map(m => ({
-      mech_id: m.id, wx: m.wx, wy: m.wy, final_facing: m.facing, mp_spent: 0
-    }))
-  };
-  const { error } = await db.from('ironfield_turn_plans')
-    .upsert({ game_id: gameId, profile_id: currentUser.id,
-              turn_number: 0, plan },
-             { onConflict: 'game_id,profile_id,turn_number' })
-    .select().single();
-  if (error) { showSyncErr(); addLog('Deployment failed: ' + error.message, 'bad'); return; }
-  showSynced();
-  addLog('Deployment submitted — waiting for opponent…', 'ok');
-  document.getElementById('btnDeployDone').disabled = true;
-  document.getElementById('deployStatus').textContent = 'Waiting for opponent deployment…';
-  await checkDeploymentComplete();
-}
-
-async function checkDeploymentComplete() {
-  const { data: plans } = await db.from('ironfield_turn_plans')
-    .select('profile_id, plan').eq('game_id', gameId).eq('turn_number', 0);
-  if (!plans || plans.length < 2) return;
-  // Both deployed — apply positions and start turn 1
-  plans.forEach(row => {
-    (row.plan?.mech_orders || []).forEach(order => {
-      const m = mechs.find(x => x.id === order.mech_id);
-      if (m) { m.wx = order.wx; m.wy = order.wy; m.facing = order.final_facing; }
-    });
-  });
-  // If host, write active state to DB
-  if (isHost) {
-    const newState = captureState();
-    await db.from('ironfield_games')
-      .update({ phase: 'planning', state: newState })
-      .eq('id', gameId);
-    // Clean up deployment plans
-    await db.from('ironfield_turn_plans')
-      .delete().eq('game_id', gameId).eq('turn_number', 0);
-  }
-  enterPlanningPhase();
-}
-
 function enterPlanningPhase() {
   gamePhase = 'planning';
   selId = null;
   document.getElementById('tbar').style.display = '';      // restore toolbar
-  document.getElementById('deployBar').classList.add('hidden');
   document.getElementById('planbar').classList.remove('hidden');
   document.getElementById('hPhase').innerHTML = '<span class="blink">●</span> <b>PLANNING</b>';
   resetPlanUI(); updatePlanBar();
@@ -1712,27 +1513,13 @@ function draw() {
 
   drawHexLayer();
   if (flags.tri) drawTriGrid();
-  drawDeployZones();
   drawCoverage();
   if (flags.out) drawOutlines();
   drawFacingCones();
   if (flags.verts) drawVertices();
-  if (gamePhase !== 'deployment' && mode === 'move' && selId) drawMoveTargets();
+  if (mode === 'move' && selId) drawMoveTargets();
   drawLOS();
   // Deployment phase: dim the battlefield outside each player's own zone
-  if (gamePhase === 'deployment') drawDeploymentVignette();
-}
-
-function drawDeploymentVignette() {
-  // Soft vignette so the zone is the focus — no hard mask
-  const grad = ctx.createRadialGradient(
-    canvas.width/2, canvas.height/2, canvas.height * 0.25,
-    canvas.width/2, canvas.height/2, canvas.height * 0.85
-  );
-  grad.addColorStop(0, 'rgba(0,0,0,0)');
-  grad.addColorStop(1, 'rgba(0,0,0,0.35)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
 function drawHexLayer() {
@@ -2177,98 +1964,34 @@ function updatePanel() {
 function buildRoster() {
   const list = document.getElementById('mlist');
   list.innerHTML = '';
-  const deploying = gamePhase === 'deployment';
-
   mechs.forEach(mech => {
     const isSel  = mech.id === selId;
     const isP1   = mech.player === 1;
     const cls    = MECH_CLASSES[mech.cls];
     const isMine = mech.player === myPlayer;
-    let inner;
-
-    if (deploying) {
-      const isPlaced = mech.wx !== -9999;
-      let statusLabel, statusColour;
-      if (!isMine) {
-        statusLabel = 'ENEMY'; statusColour = 'var(--red)';
-      } else if (isPlaced) {
-        statusLabel = '✓ DEPLOYED'; statusColour = 'var(--ph)';
-      } else {
-        statusLabel = isSel ? 'CLICK ZONE' : 'NOT PLACED';
-        statusColour = isSel ? 'var(--amb)' : '#00aa55';
-      }
-      inner = `<div class="mn" style="color:${isMine?(isP1?'var(--ph)':'var(--red)'):'#334433'}">${mech.name}</div>
-        <div class="ms">
-          <div class="sr"><span>CLASS</span><span class="v" style="color:#00aa55">${cls?.label ?? mech.cls}</span></div>
-          <div class="sr"><span>STATUS</span><span class="v" style="color:${statusColour}">${statusLabel}</span></div>
-        </div>`;
-    } else {
-      const { full, half } = getCoverage(mech);
-      const mpMax  = mechMpMax(mech);
-      const mpLeft = mechMpLeft(mech);
-      const pipCount  = Math.min(mpMax, 24);
-      const scale     = mpMax / pipCount;
-      const freeCount = Math.round(mpLeft / scale);
-      const usedCount = pipCount - freeCount;
-      let pipHtml = '<div class="mp-pips">';
-      for (let i = 0; i < pipCount; i++)
-        pipHtml += `<div class="pip ${i < usedCount ? 'used' : 'free'}"></div>`;
-      pipHtml += '</div>';
-      inner = `<div class="mn">${mech.name}</div>
-        <div class="ms">
-          <div class="sr"><span>CLASS</span><span class="v">${cls?.label ?? mech.cls}</span></div>
-          <div class="sr"><span>FACING</span><span class="v">${mech.facing}°</span></div>
-          <div class="sr"><span>MP</span><span class="v">${mpLeft}/${mpMax}</span></div>
-          ${pipHtml}
-        </div>`;
-    }
-
+    const { full, half } = getCoverage(mech);
+    const mpMax  = mechMpMax(mech);
+    const mpLeft = mechMpLeft(mech);
+    const pipCount  = Math.min(mpMax, 24);
+    const scale     = mpMax / pipCount;
+    const freeCount = Math.round(mpLeft / scale);
+    const usedCount = pipCount - freeCount;
+    let pipHtml = '<div class="mp-pips">';
+    for (let i = 0; i < pipCount; i++)
+      pipHtml += `<div class="pip ${i < usedCount ? 'used' : 'free'}"></div>`;
+    pipHtml += '</div>';
+    const inner = `<div class="mn">${mech.name}</div>
+      <div class="ms">
+        <div class="sr"><span>CLASS</span><span class="v">${cls?.label ?? mech.cls}</span></div>
+        <div class="sr"><span>FACING</span><span class="v">${mech.facing}°</span></div>
+        <div class="sr"><span>MP</span><span class="v">${mpLeft}/${mpMax}</span></div>
+        ${pipHtml}
+      </div>`;
     const c = document.createElement('div');
     c.className = `mc ${isP1?'p1':'p2'} ${isSel?'sel':''}`;
-    if (deploying && isMine) {
-      // Make own mechs clearly visible — override the near-invisible default border
-      c.style.borderColor = isP1 ? 'rgba(0,255,136,0.3)' : 'rgba(255,68,68,0.3)';
-      c.style.background  = isP1 ? 'rgba(0,255,136,0.05)' : 'rgba(255,68,68,0.05)';
-    }
     c.innerHTML = inner;
-
-    if (deploying && isMine) {
-      c.style.cursor = 'pointer';
-      c.onclick = () => {
-        selId = isSel ? null : mech.id;
-        updateDeployStatus(); buildRoster(); draw();
-      };
-      // Undeploy (✕) button — only on placed mechs
-      if (isPlaced) {
-        const xBtn = document.createElement('button');
-        xBtn.textContent = '✕';
-        xBtn.title = 'Return to roster';
-        xBtn.style.cssText = [
-          'position:absolute', 'top:4px', 'right:4px',
-          'background:none', 'border:1px solid rgba(255,68,68,0.45)',
-          'color:rgba(255,68,68,0.75)', 'font-size:9px', 'line-height:1',
-          'padding:2px 5px', 'cursor:pointer', 'letter-spacing:0',
-          'font-family:monospace'
-        ].join(';');
-        xBtn.onmouseenter = () => { xBtn.style.color='rgba(255,68,68,1)'; xBtn.style.borderColor='rgba(255,68,68,0.9)'; };
-        xBtn.onmouseleave = () => { xBtn.style.color='rgba(255,68,68,0.75)'; xBtn.style.borderColor='rgba(255,68,68,0.45)'; };
-        xBtn.onclick = (e) => {
-          e.stopPropagation();
-          mech.wx = -9999; mech.wy = -9999;
-          if (selId === mech.id) selId = null;
-          addLog(`${mech.name} returned to roster`, 'ok');
-          updateDeployStatus(); buildRoster(); draw();
-        };
-        c.appendChild(xBtn);
-      }
-    } else if (!deploying) {
-      c.onclick = () => selMech(mech.id);
-    } else if (deploying && !isMine) {
-      // Enemy mechs during deployment — visible but dimmed and unclickable
-      c.style.opacity = '0.3';
-      c.style.cursor  = 'default';
-    }
-    // Note: if myPlayer is null (edge case), all mechs show at full opacity so nothing is hidden
+    if (!isMine) { c.style.opacity = '0.35'; c.style.cursor = 'default'; }
+    else { c.onclick = () => selMech(mech.id); }
     list.appendChild(c);
   });
 }
@@ -2290,23 +2013,6 @@ canvas.addEventListener('mousemove', e => {
   mHex = w2hex(wx, wy);
   const tri = w2tri(wx, wy); mTriKey = tKey(tri.q, tri.r, tri.t);
   losPt = null; hovVert = null; currentPath = null;
-
-  if (gamePhase === 'deployment') {
-    // Show snap-point while holding a unit, with in/out-zone colour hint
-    if (selId) {
-      const nv = snapToVert(wx, wy);
-      hovVert = nv && Math.hypot(nv.wx-wx, nv.wy-wy) < HS * 0.6 ? nv : null;
-    }
-    const inZone = inDeployZone(wx, wy, myPlayer);
-    const tip = document.getElementById('tip');
-    tip.style.left = (cx+13)+'px'; tip.style.top = (cy-16)+'px';
-    tip.style.display = selId ? 'block' : 'none';
-    tip.textContent = selId
-      ? (inZone ? `✓ place here` : `✗ outside your zone`)
-      : '';
-    document.getElementById('rCur').textContent = `hex(${tri.q},${tri.r})`;
-    draw(); return;
-  }
 
   losPt = (mode === 'los') ? { x:wx, y:wy } : null;
   if (mode === 'move' && selId) {
@@ -2340,40 +2046,6 @@ canvas.addEventListener('click', e => {
   const rect = canvas.getBoundingClientRect();
   const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
   const { x: wx, y: wy } = c2w(cx, cy);
-
-  // ── DEPLOYMENT PHASE: click to place selected mech ───────────────
-  if (gamePhase === 'deployment') {
-    const myMechs = mechs.filter(m => m.player === myPlayer);
-    // Find near mech (already placed)
-    const nm = myMechs.reduce((b, m) => {
-      if (m.wx === -9999) return b;
-      const d = Math.hypot(wx-m.wx, wy-m.wy);
-      return (!b || d < b.d) ? { m, d } : b;
-    }, null);
-    const nearPlaced = nm && nm.d < OUTLINE_R * 0.55 ? nm.m : null;
-
-    if (selId) {
-      // Place selected mech at click location if inside zone
-      const m = mechs.find(x => x.id === selId);
-      if (m && m.player === myPlayer) {
-        if (!inDeployZone(wx, wy, myPlayer)) {
-          addLog(`${m.name}: must be placed in your deployment zone`, 'bad'); return;
-        }
-        const nv = snapToVert(wx, wy);
-        const dest = nv && Math.hypot(nv.wx-wx, nv.wy-wy) < HS * 0.55 ? nv : { wx, wy };
-        m.wx = dest.wx; m.wy = dest.wy;
-        selId = null;
-        addLog(`${m.name} deployed`, 'ok');
-        updateDeployStatus(); updatePanel(); buildRoster(); draw();
-        return;
-      }
-    }
-    // Select a mech (placed or unplaced)
-    const unplaced = myMechs.find(m => m.wx === -9999);
-    if (nearPlaced) { selMech(nearPlaced.id); }
-    else if (unplaced) { selMech(unplaced.id); addLog(`Select where to place ${unplaced.name}`, 'ok'); }
-    draw(); return;
-  }
 
   const nm = mechs.reduce((b, m) => {
     const d = Math.hypot(wx-m.wx, wy-m.wy);
