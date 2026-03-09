@@ -887,11 +887,16 @@ function onGameUpdate(payload) {
     return;
   }
 
-  // Already in game — handle turn resolution arriving from host
-  if (g.status === 'active' && g.phase === 'planning' && gamePhase !== 'planning') {
-    // Both players deployed; state now has real positions
+  // Already in game — apply any incoming state update (movement, turn advance, etc.)
+  if (g.status === 'active') {
     loadStateFromGame(g.state);
-    enterPlanningPhase();
+    if (g.turn_number && g.turn_number !== turnNumber) {
+      turnNumber = g.turn_number;
+      document.getElementById('hTurn').textContent = turnNumber;
+      resetPlanUI();
+      addLog(`── TURN ${turnNumber} BEGINS  ·  ALL MP RESTORED ──`, 'ok');
+    }
+    buildRoster(); updatePanel(); draw();
   }
 }
 
@@ -1042,12 +1047,17 @@ function captureState() {
 
 function loadStateFromGame(state) {
   if (!state || !state.mechs) return;
-  state.mechs.forEach(saved => {
-    const m = mechs.find(x => x.id === saved.id);
-    if (!m) return;
-    m.wx = saved.wx; m.wy = saved.wy;
-    m.facing = saved.facing; m.mpSpent = saved.mpSpent ?? 0;
-  });
+  // Fully replace the mechs array from saved state so positions are always correct
+  mechs = state.mechs.map(saved => ({
+    id:      saved.id,
+    player:  saved.player,
+    name:    saved.name,
+    cls:     saved.cls,
+    facing:  saved.facing  ?? 0,
+    wx:      saved.wx      ?? 0,
+    wy:      saved.wy      ?? 0,
+    mpSpent: saved.mpSpent ?? 0,
+  }));
   if (state.turn) turnNumber = state.turn;
 }
 
@@ -1135,7 +1145,15 @@ function resetMultiState() {
   turnNumber = 1;
   startStateCache = null;
   ox = 0; oy = 0;  // force canvas re-centre on next enterGame
-  mechs.forEach(m => { m.wx = 0; m.wy = 0; m.mpSpent = 0; });
+  // Reset mechs to default blank state — positions come from DB on next enterGame
+  mechs = [
+    { id:'p1a', player:1, name:'LANCE-1A', cls:'scout',  facing:  0, wx:0, wy:0, mpSpent:0 },
+    { id:'p1b', player:1, name:'LANCE-1B', cls:'medium', facing:  0, wx:0, wy:0, mpSpent:0 },
+    { id:'p1c', player:1, name:'LANCE-1C', cls:'heavy',  facing:  0, wx:0, wy:0, mpSpent:0 },
+    { id:'p2a', player:2, name:'LANCE-2A', cls:'scout',  facing:180, wx:0, wy:0, mpSpent:0 },
+    { id:'p2b', player:2, name:'LANCE-2B', cls:'medium', facing:180, wx:0, wy:0, mpSpent:0 },
+    { id:'p2c', player:2, name:'LANCE-2C', cls:'heavy',  facing:180, wx:0, wy:0, mpSpent:0 },
+  ];
   selId = null;
   // Clear the activity log so previous game messages don't bleed in
   const logEl = document.getElementById('log');
