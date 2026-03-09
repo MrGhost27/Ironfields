@@ -758,20 +758,23 @@ function copyCode() {
 }
 
 function buildStartState() {
-  // Pre-placed starting positions — both forces in the horizontal centre of the map,
-  // spread across left (q=5) and right (q=23) columns so they face each other.
+  // P1 spawns top-left, P2 spawns top-right, each spread vertically so all 3 are visible.
+  // Grid is COLS=29 (q: 0-28), ROWS=21. r offset accounts for hex column stagger.
   const HS = 23, S3 = Math.sqrt(3);
   const hc = (q, r) => ({ x: round2(HS*1.5*q), y: round2(HS*(S3*r + S3/2*q)) });
   const round2 = v => Math.round(v * 100) / 100;
+  // Top row for each column: r0 = -floor(q/2)
+  const p1q = 2,  p1r0 = -Math.floor(p1q / 2);
+  const p2q = 26, p2r0 = -Math.floor(p2q / 2);
   return {
     turn: 1,
     mechs: [
-      { id:'p1a', player:1, name:'LANCE-1A', cls:'scout',  facing:  0, mpSpent:0, ...hc(5, 7) },
-      { id:'p1b', player:1, name:'LANCE-1B', cls:'medium', facing:  0, mpSpent:0, ...hc(5, 9) },
-      { id:'p1c', player:1, name:'LANCE-1C', cls:'heavy',  facing:  0, mpSpent:0, ...hc(5,11) },
-      { id:'p2a', player:2, name:'LANCE-2A', cls:'scout',  facing:180, mpSpent:0, ...hc(23, 7) },
-      { id:'p2b', player:2, name:'LANCE-2B', cls:'medium', facing:180, mpSpent:0, ...hc(23, 9) },
-      { id:'p2c', player:2, name:'LANCE-2C', cls:'heavy',  facing:180, mpSpent:0, ...hc(23,11) },
+      { id:'p1a', player:1, name:'LANCE-1A', cls:'scout',  facing: 90, mpSpent:0, ...hc(p1q, p1r0)   },
+      { id:'p1b', player:1, name:'LANCE-1B', cls:'medium', facing: 90, mpSpent:0, ...hc(p1q, p1r0+3) },
+      { id:'p1c', player:1, name:'LANCE-1C', cls:'heavy',  facing: 90, mpSpent:0, ...hc(p1q, p1r0+6) },
+      { id:'p2a', player:2, name:'LANCE-2A', cls:'scout',  facing:270, mpSpent:0, ...hc(p2q, p2r0)   },
+      { id:'p2b', player:2, name:'LANCE-2B', cls:'medium', facing:270, mpSpent:0, ...hc(p2q, p2r0+3) },
+      { id:'p2c', player:2, name:'LANCE-2C', cls:'heavy',  facing:270, mpSpent:0, ...hc(p2q, p2r0+6) },
     ]
   };
 }
