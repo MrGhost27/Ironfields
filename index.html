@@ -895,15 +895,15 @@ function onGameUpdate(payload) {
     return;
   }
 
-  // Already in game — apply any incoming state update (movement, turn advance, etc.)
-  if (g.status === 'active') {
+  // Already in game — only apply incoming state when the turn has actually advanced.
+  // This prevents onGameUpdate from overwriting a player's local planning-phase moves.
+  if (g.status === 'active' && g.turn_number && g.turn_number !== turnNumber) {
     loadStateFromGame(g.state);
-    if (g.turn_number && g.turn_number !== turnNumber) {
-      turnNumber = g.turn_number;
-      document.getElementById('hTurn').textContent = turnNumber;
-      resetPlanUI();
-      addLog(`── TURN ${turnNumber} BEGINS  ·  ALL MP RESTORED ──`, 'ok');
-    }
+    turnNumber = g.turn_number;
+    document.getElementById('hTurn').textContent = turnNumber;
+    isResolving = false;
+    resetPlanUI();
+    addLog(`── TURN ${turnNumber} BEGINS  ·  ALL MP RESTORED ──`, 'ok');
     buildRoster(); updatePanel(); draw();
   }
 }
@@ -916,7 +916,7 @@ function onPlanUpdate(payload) {
 
 async function checkBothPlansSubmitted() {
   const { data: plans } = await db.from('ironfield_turn_plans')
-    .select('id, profile_id').eq('game_id', gameId).eq('turn_number', turnNumber);
+    .select('id, profile_id, plan').eq('game_id', gameId).eq('turn_number', turnNumber);
   if (!plans) return;
 
   const myPlan    = plans.find(p => p.profile_id === currentUser.id);
@@ -977,8 +977,11 @@ async function recallPlan() {
 }
 
 // ── WEGO RESOLUTION ───────────────────────────────────────────────
+let isResolving = false;  // guard against double-resolution from race conditions
 // Called by host only when both plans are in.
 async function resolveTurn(plans) {
+  if (isResolving) return;
+  isResolving = true;
   addLog(`── RESOLVING TURN ${turnNumber} ──`, 'ok');
 
   // Apply each plan to the mech state
@@ -1009,6 +1012,7 @@ async function resolveTurn(plans) {
     .delete().eq('game_id', gameId).eq('turn_number', turnNumber - 1);
 
   await logEvent('turn_resolved');
+  isResolving = false;
   resetPlanUI();
   addLog(`── TURN ${turnNumber} BEGINS ──`, 'ok');
   buildRoster(); updatePanel(); draw();
