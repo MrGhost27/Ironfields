@@ -770,15 +770,27 @@ function buildStartState() {
   const p1q = 3,  p1r0 = -Math.floor(p1q / 2) + 2;   // left side
   const p2q = 25, p2r0 = -Math.floor(p2q / 2) + 2;   // right side
 
+  const mkMech = (id, player, name, cls, facing, q, r) => {
+    const c = MECH_CLASSES[cls];
+    return {
+      id, player, name, cls, facing, mpSpent: 0,
+      mpSpentLastTurn: 0,
+      destroyed: false,
+      armour:    { ...c.baseArmour    },
+      structure: { ...c.baseStructure },
+      ...spawnHex(q, r),
+    };
+  };
+
   return {
     turn: 1,
     mechs: [
-      { id:'p1a', player:1, name:'LANCE-1A', cls:'scout',  facing: 90, mpSpent:0, ...spawnHex(p1q, p1r0)   },
-      { id:'p1b', player:1, name:'LANCE-1B', cls:'medium', facing: 90, mpSpent:0, ...spawnHex(p1q, p1r0+4) },
-      { id:'p1c', player:1, name:'LANCE-1C', cls:'heavy',  facing: 90, mpSpent:0, ...spawnHex(p1q, p1r0+8) },
-      { id:'p2a', player:2, name:'LANCE-2A', cls:'scout',  facing:270, mpSpent:0, ...spawnHex(p2q, p2r0)   },
-      { id:'p2b', player:2, name:'LANCE-2B', cls:'medium', facing:270, mpSpent:0, ...spawnHex(p2q, p2r0+4) },
-      { id:'p2c', player:2, name:'LANCE-2C', cls:'heavy',  facing:270, mpSpent:0, ...spawnHex(p2q, p2r0+8) },
+      mkMech('p1a', 1, 'LANCE-1A', 'scout',   90, p1q, p1r0  ),
+      mkMech('p1b', 1, 'LANCE-1B', 'medium',  90, p1q, p1r0+4),
+      mkMech('p1c', 1, 'LANCE-1C', 'heavy',   90, p1q, p1r0+8),
+      mkMech('p2a', 2, 'LANCE-2A', 'scout',  270, p2q, p2r0  ),
+      mkMech('p2b', 2, 'LANCE-2B', 'medium', 270, p2q, p2r0+4),
+      mkMech('p2c', 2, 'LANCE-2C', 'heavy',  270, p2q, p2r0+8),
     ]
   };
 }
@@ -984,7 +996,7 @@ async function resolveTurn(plans) {
   isResolving = true;
   addLog(`── RESOLVING TURN ${turnNumber} ──`, 'ok');
 
-  // Apply each plan to the mech state
+  // 1. Apply movement orders from both plans
   plans.forEach(row => {
     const orders = row.plan?.mech_orders || [];
     orders.forEach(order => {
@@ -993,11 +1005,45 @@ async function resolveTurn(plans) {
       m.wx      = order.wx;
       m.wy      = order.wy;
       m.facing  = order.final_facing;
-      m.mpSpent = 0;  // reset for next turn
+      // Record movement before resetting so combat modifiers can use it
+      m.mpSpentLastTurn = order.mp_spent ?? m.mpSpent;
+      m.mpSpent = 0;
     });
   });
 
-  // Increment turn, reset phase, write new state to DB
+  // 2. Resolve combat — collect all fire orders from both plans
+  const allFireOrders = [];
+  plans.forEach(row => {
+    (row.plan?.fire_orders || []).forEach(fo => allFireOrders.push(fo));
+  });
+
+  if (allFireOrders.length > 0) {
+    addLog('── COMBAT ──', 'ok');
+    allFireOrders.forEach(fo => {
+      const attacker = mechs.find(m => m.id === fo.attacker_id);
+      const target   = mechs.find(m => m.id === fo.target_id);
+      if (!attacker || !target) return;
+      if (attacker.destroyed || target.destroyed) return;
+      const lines = resolveFire(attacker, target, fo.weapon);
+      lines.forEach(l => addLog(l, l.includes('ELIMINATED') ? 'bad' : ''));
+    });
+
+    // 3. Check win condition
+    const p1alive = mechs.filter(m => m.player === 1 && !m.destroyed).length;
+    const p2alive = mechs.filter(m => m.player === 2 && !m.destroyed).length;
+    if (p1alive === 0 || p2alive === 0) {
+      const winner = p1alive > 0 ? 1 : 2;
+      addLog(`══ PLAYER ${winner} WINS — ALL ENEMY MECHS ELIMINATED ══`, 'ok');
+      await db.from('ironfield_games')
+        .update({ status: 'complete', state: captureState() })
+        .eq('id', gameId);
+      isResolving = false;
+      buildRoster(); updatePanel(); draw();
+      return;
+    }
+  }
+
+  // 4. Increment turn, reset phase, write new state to DB
   turnNumber++;
   const newState = captureState();
   showSync('Resolving…');
@@ -1051,7 +1097,11 @@ function captureState() {
   return {
     mechs: mechs.map(m => ({
       id: m.id, player: m.player, name: m.name, cls: m.cls,
-      facing: m.facing, wx: m.wx, wy: m.wy, mpSpent: 0
+      facing: m.facing, wx: m.wx, wy: m.wy, mpSpent: 0,
+      mpSpentLastTurn: m.mpSpentLastTurn ?? 0,
+      destroyed:       m.destroyed       ?? false,
+      armour:          m.armour          ?? { ...MECH_CLASSES[m.cls]?.baseArmour    },
+      structure:       m.structure       ?? { ...MECH_CLASSES[m.cls]?.baseStructure },
     })),
     turn: turnNumber
   };
@@ -1060,16 +1110,23 @@ function captureState() {
 function loadStateFromGame(state) {
   if (!state || !state.mechs) return;
   // Fully replace the mechs array from saved state so positions are always correct
-  mechs = state.mechs.map(saved => ({
-    id:      saved.id,
-    player:  saved.player,
-    name:    saved.name,
-    cls:     saved.cls,
-    facing:  saved.facing  ?? 0,
-    wx:      saved.wx      ?? 0,
-    wy:      saved.wy      ?? 0,
-    mpSpent: saved.mpSpent ?? 0,
-  }));
+  mechs = state.mechs.map(saved => {
+    const cls = MECH_CLASSES[saved.cls] ?? MECH_CLASSES.medium;
+    return {
+      id:              saved.id,
+      player:          saved.player,
+      name:            saved.name,
+      cls:             saved.cls,
+      facing:          saved.facing          ?? 0,
+      wx:              saved.wx              ?? 0,
+      wy:              saved.wy              ?? 0,
+      mpSpent:         saved.mpSpent         ?? 0,
+      mpSpentLastTurn: saved.mpSpentLastTurn ?? 0,
+      destroyed:       saved.destroyed       ?? false,
+      armour:          saved.armour          ?? { ...cls.baseArmour    },
+      structure:       saved.structure       ?? { ...cls.baseStructure },
+    };
+  });
   if (state.turn) turnNumber = state.turn;
 }
 
@@ -1428,9 +1485,40 @@ function getCoverage(mech) {
 // mpSpent = MP used this turn (resets on new turn)
 // class   = label for display
 const MECH_CLASSES = {
-  scout:  { label:'SCOUT',  mpMax:18, color:'#55ffbb' },
-  medium: { label:'MEDIUM', mpMax:12, color:'#00ff88' },
-  heavy:  { label:'HEAVY',  mpMax: 6, color:'#88ff44' },
+  scout: {
+    label:'SCOUT', mpMax:18, color:'#55ffbb',
+    weapons: ['laser_light', 'missile_srm2'],
+    baseArmour:    { head:2, ct:6,  lt:4,  rt:4,  la:3,  ra:3,  ll:4,  rl:4  },
+    baseStructure: { head:1, ct:3,  lt:2,  rt:2,  la:1,  ra:1,  ll:2,  rl:2  },
+  },
+  medium: {
+    label:'MEDIUM', mpMax:12, color:'#00ff88',
+    weapons: ['laser_medium', 'ballistic_ac5'],
+    baseArmour:    { head:3, ct:10, lt:8,  rt:8,  la:6,  ra:6,  ll:7,  rl:7  },
+    baseStructure: { head:1, ct:5,  lt:4,  rt:4,  la:3,  ra:3,  ll:4,  rl:4  },
+  },
+  heavy: {
+    label:'HEAVY', mpMax:6, color:'#88ff44',
+    weapons: ['laser_large', 'ballistic_ac10', 'missile_lrm5'],
+    baseArmour:    { head:3, ct:16, lt:12, rt:12, la:10, ra:10, ll:11, rl:11 },
+    baseStructure: { head:1, ct:8,  lt:6,  rt:6,  la:5,  ra:5,  ll:7,  rl:7  },
+  },
+};
+
+// ── WEAPONS ───────────────────────────────────────────────────────
+// type:     'laser' | 'ballistic' | 'missile'
+// range:    max range in hex units
+// damage:   base damage points per hit
+// tn:       base target number (3D6, roll >= tn to hit)
+// salvo:    missile only — number of warheads in the salvo
+const WEAPONS = {
+  laser_light:    { label:'LT LASER', type:'laser',     range: 6, damage: 3, tn:10 },
+  laser_medium:   { label:'MD LASER', type:'laser',     range: 9, damage: 5, tn:10 },
+  laser_large:    { label:'LG LASER', type:'laser',     range:14, damage: 8, tn:10 },
+  ballistic_ac5:  { label:'AC/5',     type:'ballistic', range:10, damage: 5, tn:10 },
+  ballistic_ac10: { label:'AC/10',    type:'ballistic', range: 7, damage:10, tn:10 },
+  missile_srm2:   { label:'SRM-2',    type:'missile',   range: 6, damage: 4, tn:10, salvo:2 },
+  missile_lrm5:   { label:'LRM-5',    type:'missile',   range:18, damage: 5, tn:10, salvo:5 },
 };
 
 let mechs = [
@@ -1444,6 +1532,179 @@ let mechs = [
 
 function mechMpMax(mech)  { return MECH_CLASSES[mech.cls]?.mpMax  ?? 12; }
 function mechMpLeft(mech) { return mechMpMax(mech) - mech.mpSpent; }
+
+// ── COMBAT HELPERS ────────────────────────────────────────────────
+
+// Armour/structure convenience — fall back to class defaults if fields missing
+// (guards against old saved games that pre-date combat fields)
+function mechArmour(mech)    { return mech.armour    ?? { ...MECH_CLASSES[mech.cls]?.baseArmour    }; }
+function mechStructure(mech) { return mech.structure ?? { ...MECH_CLASSES[mech.cls]?.baseStructure }; }
+
+// Hex distance between two mechs (cube-coordinate formula)
+function hexDist(a, b) {
+  const ha = w2hex(a.wx, a.wy);
+  const hb = w2hex(b.wx, b.wy);
+  const s1 = -ha.q - ha.r, s2 = -hb.q - hb.r;
+  return Math.max(Math.abs(ha.q-hb.q), Math.abs(ha.r-hb.r), Math.abs(s1-s2));
+}
+
+// Fire arc check using existing coverage geometry.
+// Returns 'full', 'half', or 'none'.
+function isInFireArc(attacker, target) {
+  const { full, half } = getCoverage(attacker);
+  const th = w2hex(target.wx, target.wy);
+  if (full.some(t => t.q === th.q && t.r === th.r)) return 'full';
+  if (half.some(t => t.q === th.q && t.r === th.r)) return 'half';
+  return 'none';
+}
+
+// 3D6 roll — returns total, individual dice, and whether any two match
+function roll3d6() {
+  const dice = [1, 2, 3].map(() => Math.ceil(Math.random() * 6));
+  const doubles = dice[0]===dice[1] || dice[1]===dice[2] || dice[0]===dice[2];
+  return { total: dice.reduce((a, b) => a + b, 0), doubles, dice };
+}
+
+// Hit location table — 3D6 roll maps to mech location key
+// Centre torso on 9/10/11 (bell peak, ~34% combined); head only on 3 & 18 (~0.9% each)
+const HIT_LOC = {
+   3:'head',  4:'ra',   5:'rt',  6:'rl',
+   7:'ll',    8:'lt',   9:'ct', 10:'ct',
+  11:'ct',   12:'la',  13:'rt', 14:'lt',
+  15:'rl',   16:'ll',  17:'la', 18:'head'
+};
+
+const LOC_LABEL = {
+  head:'HEAD', ct:'CENTRE TORSO', lt:'LEFT TORSO', rt:'RIGHT TORSO',
+  la:'LEFT ARM', ra:'RIGHT ARM', ll:'LEFT LEG', rl:'RIGHT LEG'
+};
+
+// Calculate effective target number for a shot.
+// Returns null if the shot is impossible (out of range or no arc).
+function calcToHit(attacker, target, weapon) {
+  // Arc check
+  const arc = isInFireArc(attacker, target);
+  if (arc === 'none') return null;
+
+  // Range check
+  const dist = hexDist(attacker, target);
+  if (dist > weapon.range) return null;
+
+  let tn = weapon.tn; // base = 10
+
+  // Half-arc penalty
+  if (arc === 'half') tn += 2;
+
+  // Range bands
+  if (dist > weapon.range * 0.6) tn += 2;  // long range
+  if (dist <= 3)                 tn -= 1;  // point blank
+
+  // Attacker movement — sprinting makes aiming harder
+  if (attacker.mpSpent > 0)                                      tn += 1;
+  if (attacker.mpSpent >= Math.ceil(mechMpMax(attacker) * 0.5)) tn += 1;
+
+  // Target movement last turn — ballistics are most sensitive to this
+  const tgtMoved = target.mpSpentLastTurn ?? 0;
+  if (weapon.type === 'ballistic') {
+    if (tgtMoved >= 6)  tn += 1;
+    if (tgtMoved >= 12) tn += 1;
+  } else {
+    if (tgtMoved >= 9)  tn += 1;
+  }
+
+  return Math.max(3, Math.min(18, tn));
+}
+
+// Apply damage to a mech location, returning a brief result string for the log.
+// penetrating = true means damage bypasses armour (ballistic doubles).
+function applyDamage(mech, location, rawDamage, penetrating = false) {
+  if (!mech.armour)    mech.armour    = { ...MECH_CLASSES[mech.cls].baseArmour    };
+  if (!mech.structure) mech.structure = { ...MECH_CLASSES[mech.cls].baseStructure };
+
+  let strDmg = 0;
+  if (penetrating) {
+    strDmg = rawDamage;
+    mech.structure[location] = Math.max(0, mech.structure[location] - strDmg);
+  } else {
+    const absorbed = Math.min(mech.armour[location], rawDamage);
+    mech.armour[location] -= absorbed;
+    strDmg = rawDamage - absorbed;
+    mech.structure[location] = Math.max(0, mech.structure[location] - strDmg);
+  }
+
+  const locLabel   = LOC_LABEL[location] ?? location.toUpperCase();
+  const destroyed  = mech.structure[location] <= 0;
+  let result = `${locLabel} -${rawDamage}dmg${penetrating?' [PENETRATING]':''}`;
+
+  if (destroyed) {
+    result += ` *** ${locLabel} DESTROYED ***`;
+    if (location === 'ct' || location === 'head') {
+      mech.destroyed = true;
+      result += ` *** ${mech.name} ELIMINATED ***`;
+    }
+  }
+  return result;
+}
+
+// Resolve a single fire order.  Returns array of log strings.
+function resolveFire(attacker, target, weaponKey) {
+  const weapon = WEAPONS[weaponKey];
+  if (!weapon) return [`${attacker.name}: unknown weapon ${weaponKey}`];
+
+  const tn = calcToHit(attacker, target, weapon);
+  if (tn === null) {
+    return [`${attacker.name} → ${target.name}: ${weapon.label} — NO SHOT (out of range or arc)`];
+  }
+
+  const lines = [];
+  const header = `${attacker.name} fires ${weapon.label} at ${target.name} [TN:${tn}]`;
+
+  if (weapon.type === 'laser') {
+    const roll = roll3d6();
+    const hit  = roll.total >= tn;
+    lines.push(`${header} — rolled ${roll.total}${roll.doubles?'*':''} → ${hit?'HIT':'MISS'}`);
+    if (hit) {
+      const loc   = HIT_LOC[roll3d6().total];
+      const dmg   = weapon.damage + (roll.doubles ? 1 : 0);
+      const extra = roll.doubles ? ' (focused beam +1)' : '';
+      lines.push(`  └ ${applyDamage(target, loc, dmg)}${extra}`);
+    }
+
+  } else if (weapon.type === 'ballistic') {
+    const roll = roll3d6();
+    const hit  = roll.total >= tn;
+    lines.push(`${header} — rolled ${roll.total}${roll.doubles?'*':''} → ${hit?'HIT':'MISS'}`);
+    if (hit) {
+      const loc         = HIT_LOC[roll3d6().total];
+      const penetrating = roll.doubles;
+      lines.push(`  └ ${applyDamage(target, loc, weapon.damage, penetrating)}`);
+    }
+
+  } else if (weapon.type === 'missile') {
+    const lockRoll = roll3d6();
+    const locked   = lockRoll.total >= tn;
+    lines.push(`${header} — lock roll ${lockRoll.total}${lockRoll.doubles?'*':''} → ${locked?'LOCKED':'NO LOCK'}`);
+    if (locked) {
+      const guided = lockRoll.doubles;
+      const hits   = guided ? weapon.salvo : Math.min(Math.ceil(Math.random() * 6), weapon.salvo);
+      lines.push(`  └ ${hits}/${weapon.salvo} missiles ${guided?'(guided — all same loc)':''}`);
+      const dmgPerMissile = Math.ceil(weapon.damage / weapon.salvo);
+      if (guided) {
+        const loc = HIT_LOC[roll3d6().total];
+        for (let i = 0; i < hits; i++) {
+          lines.push(`    └ ${applyDamage(target, loc, dmgPerMissile)}`);
+        }
+      } else {
+        for (let i = 0; i < hits; i++) {
+          const loc = HIT_LOC[roll3d6().total];
+          lines.push(`    └ ${applyDamage(target, loc, dmgPerMissile)}`);
+        }
+      }
+    }
+  }
+
+  return lines;
+}
 
 function placeMechsDefault() {
   const p1 = [{q:3,r:1},{q:3,r:4},{q:3,r:7}];
