@@ -87,6 +87,15 @@
   .tb.amb:hover,.tb.amb.on{border-color:var(--amb);background:rgba(255,170,0,.07);}
   .tb.los{color:var(--blu);border-color:#1e2244;}
   .tb.los:hover,.tb.los.on{border-color:var(--blu);background:rgba(136,170,255,.07);}
+  .tb.fire{color:#ff6644;border-color:#3a1100;}
+  .tb.fire:hover,.tb.fire.on{border-color:#ff6644;background:rgba(255,102,68,.07);
+    box-shadow:0 0 8px rgba(255,102,68,.18);}
+  /* Roster card fire-target indicator */
+  .mc.fire-target{border-color:#ff6644 !important;background:rgba(255,102,68,.07) !important;}
+  .mc.fire-target::after{
+    content:'TARGET';position:absolute;right:6px;top:6px;
+    font-size:7px;letter-spacing:1px;color:#ff6644;
+  }
   .rpan{
     width:192px;background:var(--pan);border-left:1px solid var(--bdr);
     flex-shrink:0;display:flex;flex-direction:column;overflow:hidden;
@@ -408,6 +417,7 @@
       <button class="tb"     id="b-move" onclick="setMode('move')">[ MOVE ]</button>
       <button class="tb amb" id="b-rot"  onclick="setMode('rotate')">[ ROTATE ]</button>
       <button class="tb los" id="b-los"  onclick="setMode('los')">[ LOS ]</button>
+      <button class="tb fire" id="b-fire" onclick="setMode('fire')">[ FIRE ]</button>
       <button class="tb"     id="b-tg"   onclick="togFlag('tri')">[ TRI GRID ]</button>
       <button class="tb on"  id="b-out"  onclick="togFlag('out')">[ OUTLINE ]</button>
       <button class="tb on"  id="b-half" onclick="togFlag('half')">[ HALF TRIS ]</button>
@@ -959,7 +969,10 @@ async function submitPlan() {
       wy:           m.wy,
       final_facing: m.facing,
       mp_spent:     m.mpSpent
-    }))
+    })),
+    fire_orders: fireOrders.filter(fo =>
+      myMechs.some(m => m.id === fo.attacker_id)
+    )
   };
 
   const { data, error } = await db.from('ironfield_turn_plans')
@@ -1083,6 +1096,7 @@ function resetPlanUI() {
   myPlanId           = null;
   myPlanSubmitted    = false;
   enemyPlanSubmitted = false;
+  fireOrders         = [];
   mechs.forEach(m => m.mpSpent = 0);
   updatePlanBar();
 }
@@ -1257,6 +1271,8 @@ let ox = 0, oy = 0;
 let isPanning = false, panStartX = 0, panStartY = 0, panOx = 0, panOy = 0;
 // deployment phase state
 let gamePhase = 'planning'; // 'deployment' | 'planning'
+// fire orders queued this planning phase: [{ attacker_id, target_id, weapon }]
+let fireOrders = [];
 
 // ── HEX / TRI GEOMETRY ──────────────────────────────────────────
 function hCentre(q, r) {
@@ -1807,7 +1823,49 @@ function draw() {
   if (flags.verts) drawVertices();
   if (mode === 'move' && selId) drawMoveTargets();
   drawLOS();
+  drawFireOrders();
   // Deployment phase: dim the battlefield outside each player's own zone
+}
+
+function drawFireOrders() {
+  if (!fireOrders.length) return;
+  fireOrders.forEach(fo => {
+    const att = mechs.find(m => m.id === fo.attacker_id);
+    const tgt = mechs.find(m => m.id === fo.target_id);
+    if (!att || !tgt) return;
+
+    const { x: ax, y: ay } = w2c(att.wx, att.wy);
+    const { x: tx, y: ty } = w2c(tgt.wx, tgt.wy);
+
+    // Dashed red line attacker → target
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(tx, ty);
+    ctx.strokeStyle = 'rgba(255,102,68,0.7)';
+    ctx.lineWidth   = 1.5;
+    ctx.setLineDash([5, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Small arrowhead at target end
+    const angle = Math.atan2(ty - ay, tx - ax);
+    const aLen  = 8;
+    ctx.beginPath();
+    ctx.moveTo(tx, ty);
+    ctx.lineTo(tx - aLen * Math.cos(angle - 0.4), ty - aLen * Math.sin(angle - 0.4));
+    ctx.moveTo(tx, ty);
+    ctx.lineTo(tx - aLen * Math.cos(angle + 0.4), ty - aLen * Math.sin(angle + 0.4));
+    ctx.strokeStyle = 'rgba(255,102,68,0.9)';
+    ctx.lineWidth   = 1.5;
+    ctx.stroke();
+
+    // Weapon label near midpoint
+    const mx = (ax + tx) / 2, my = (ay + ty) / 2;
+    ctx.font      = '9px Share Tech Mono';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ff6644';
+    ctx.fillText(WEAPONS[fo.weapon]?.label ?? fo.weapon, mx, my - 7);
+  });
 }
 
 function drawHexLayer() {
@@ -2201,7 +2259,7 @@ function togFlag(k) {
 function setMode(m) {
   mode = m;
   document.querySelectorAll('.tb[id^="b-"]').forEach(b => b.classList.remove('on'));
-  const bmap = { select:'sel', move:'move', rotate:'rot', los:'los' };
+  const bmap = { select:'sel', move:'move', rotate:'rot', los:'los', fire:'fire' };
   document.getElementById(`b-${bmap[m]||m}`).classList.add('on');
   document.getElementById('hmode').textContent = m.toUpperCase();
   if (m === 'los') { losId = selId; }
@@ -2209,7 +2267,8 @@ function setMode(m) {
     select: 'Click a unit to select it',
     move:   'Click any vertex (amber dot) to move',
     rotate: 'Click to set facing direction',
-    los:    'Hover to preview line of sight'
+    los:    'Hover to preview line of sight',
+    fire:   'Select your mech, then click an enemy to assign a fire order'
   };
   document.getElementById('mhint').textContent = hints[m] || '';
   hovVert = null; draw();
@@ -2268,15 +2327,26 @@ function buildRoster() {
     for (let i = 0; i < pipCount; i++)
       pipHtml += `<div class="pip ${i < usedCount ? 'used' : 'free'}"></div>`;
     pipHtml += '</div>';
+    // Fire order annotations
+    const myOrder    = fireOrders.find(fo => fo.attacker_id === mech.id);
+    const isTargeted = !isMine && fireOrders.some(fo => fo.target_id === mech.id);
+    const fireHtml   = myOrder
+      ? `<div class="sr" style="color:#ff6644;margin-top:3px;">
+           <span>FIRE</span>
+           <span>${WEAPONS[myOrder.weapon]?.label ?? myOrder.weapon}
+           → ${mechs.find(m => m.id === myOrder.target_id)?.name ?? '?'}</span>
+         </div>`
+      : '';
+
     const inner = `<div class="mn">${mech.name}</div>
       <div class="ms">
         <div class="sr"><span>CLASS</span><span class="v">${cls?.label ?? mech.cls}</span></div>
         <div class="sr"><span>FACING</span><span class="v">${mech.facing}°</span></div>
         <div class="sr"><span>MP</span><span class="v">${mpLeft}/${mpMax}</span></div>
-        ${pipHtml}
+        ${pipHtml}${fireHtml}
       </div>`;
     const c = document.createElement('div');
-    c.className = `mc ${isP1?'p1':'p2'} ${isSel?'sel':''}`;
+    c.className = `mc ${isP1?'p1':'p2'} ${isSel?'sel':''} ${isTargeted?'fire-target':''}`;
     c.innerHTML = inner;
     if (!isMine) { c.style.opacity = '0.35'; c.style.cursor = 'default'; }
     else { c.onclick = () => selMech(mech.id); }
@@ -2384,6 +2454,38 @@ canvas.addEventListener('click', e => {
         losId = null;
       }
     }
+  }
+  if (mode === 'fire') {
+    if (!near) return;
+    const isMine = near.player === myPlayer;
+    if (isMine) {
+      // Clicking own mech selects it as the attacker
+      selMech(near.id);
+      return;
+    }
+    // Clicking enemy mech assigns / replaces the fire order for the selected attacker
+    if (!selId) {
+      addLog('FIRE: select one of your mechs first', 'bad'); return;
+    }
+    const attacker = mechs.find(m => m.id === selId);
+    if (!attacker || attacker.destroyed || near.destroyed) return;
+
+    // Pick the first weapon that can reach — simple default for now
+    const cls   = MECH_CLASSES[attacker.cls];
+    const wKey  = cls.weapons.find(wk => {
+      const w = WEAPONS[wk];
+      return w && hexDist(attacker, near) <= w.range;
+    }) ?? cls.weapons[0];
+
+    // Replace any existing order from this attacker
+    fireOrders = fireOrders.filter(fo => fo.attacker_id !== selId);
+    fireOrders.push({ attacker_id: selId, target_id: near.id, weapon: wKey });
+
+    const w = WEAPONS[wKey];
+    const tn = calcToHit(attacker, near, w);
+    const tnStr = tn !== null ? ` [TN:${tn}]` : ' [OUT OF ARC/RANGE]';
+    addLog(`${attacker.name} → ${near.name} : ${w.label}${tnStr}`, 'ok');
+    buildRoster(); draw();
   }
 });
 canvas.addEventListener('contextmenu', e => {
