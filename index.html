@@ -96,6 +96,65 @@
     content:'TARGET';position:absolute;right:6px;top:6px;
     font-size:7px;letter-spacing:1px;color:#ff6644;
   }
+  /* ── WEAPON PICKER ─────────────────────────────────────────── */
+  #wpicker{
+    border-top:1px solid var(--bdr);padding:8px 10px;display:none;
+    flex-direction:column;gap:4px;
+  }
+  #wpicker.visible{ display:flex; }
+  .wp-title{
+    font-family:'Orbitron',sans-serif;font-size:8px;letter-spacing:3px;
+    color:var(--dim);margin-bottom:3px;
+  }
+  .wp-target{
+    font-size:9px;color:#ff6644;letter-spacing:1px;margin-bottom:4px;
+    min-height:12px;
+  }
+  .wp-btn{
+    background:transparent;border:1px solid var(--bdr);
+    color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:9px;
+    padding:5px 7px;cursor:pointer;text-align:left;
+    transition:all .1s;line-height:1.5;
+  }
+  .wp-btn:hover:not(:disabled){ border-color:var(--phd);color:var(--txt); }
+  .wp-btn.sel{
+    border-color:#ff6644;color:#ff6644;
+    background:rgba(255,102,68,0.08);
+    box-shadow:0 0 6px rgba(255,102,68,0.15);
+  }
+  .wp-btn:disabled{
+    opacity:0.28;cursor:not-allowed;
+  }
+  .wp-btn.disabled-weapon{
+    opacity:0.45;cursor:not-allowed;
+    border-color:var(--rdd) !important;
+    color:var(--red) !important;
+  }
+  .wp-btn.disabled-weapon .wstats{
+    color:rgba(255,68,68,0.5) !important;
+  }
+  .wp-btn .wlabel{ display:block;font-weight:bold;letter-spacing:1px; }
+  .wp-btn .wstats{ display:block;color:var(--dim);font-size:8px; }
+  .wp-btn.sel .wstats{ color:rgba(255,102,68,0.7); }
+  .wp-btn:hover:not(:disabled) .wstats{ color:var(--dim); }
+  .wp-btn .wtn{
+    float:right;font-size:10px;font-weight:bold;
+  }
+  .wp-btn.sel .wtn{ color:#ff6644; }
+  .wp-btn .wtn.ok { color:var(--ph); }
+  .wp-btn .wtn.bad{ color:var(--red); }
+  .wp-hint{
+    font-size:8px;color:var(--dim);letter-spacing:1px;
+    margin-top:2px;text-align:center;min-height:11px;
+  }
+  .wp-clear{
+    background:transparent;border:1px solid var(--bdr);color:var(--dim);
+    font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:1px;
+    padding:3px 7px;cursor:pointer;margin-top:2px;
+    transition:all .1s;
+  }
+  .wp-clear:hover{ border-color:var(--red);color:var(--red); }
+
   .rpan{
     width:192px;background:var(--pan);border-left:1px solid var(--bdr);
     flex-shrink:0;display:flex;flex-direction:column;overflow:hidden;
@@ -142,6 +201,21 @@
   .pip.free{background:var(--ph);}
   .pip.cost{background:var(--amb);}
   .pip.over{background:var(--red);}
+  /* armour / structure bars */
+  .hpbars{margin-top:5px;display:flex;flex-direction:column;gap:3px;}
+  .hprow{display:flex;align-items:center;gap:4px;}
+  .hprow .lbl{font-size:7px;color:var(--dim);letter-spacing:1px;width:10px;flex-shrink:0;}
+  .hptrack{flex:1;height:5px;background:rgba(255,255,255,0.05);
+           border:1px solid var(--bdr);position:relative;overflow:hidden;}
+  .hpfill{height:100%;position:absolute;left:0;top:0;transition:width .2s;}
+  .hpfill.arm{background:#00cc66;}
+  .hpfill.arm.warn{background:var(--amb);}
+  .hpfill.arm.crit{background:var(--red);}
+  .hpfill.str{background:#aa3333;}
+  .hpnum{font-size:7px;color:var(--dim);white-space:nowrap;min-width:22px;text-align:right;}
+  /* destroyed mech card */
+  .mc.destroyed{opacity:0.28 !important;cursor:default !important;}
+  .mc.destroyed .mn::after{content:' [DESTROYED]';color:var(--red);font-size:7px;letter-spacing:1px;}
 
   /* ── MAP PAN SCROLLBARS ──────────────────────────────────────── */
   .carea{ position:relative; overflow:hidden; }
@@ -172,6 +246,40 @@
     background:var(--phd);border:none;border-radius:0;cursor:pointer;
   }
   input[type=range]::-webkit-slider-thumb:hover{ background:var(--ph); }
+  /* ── VICTORY OVERLAY ────────────────────────────────────────── */
+  #scr-victory{
+    position:fixed;inset:0;z-index:800;
+    background:rgba(6,10,7,0.93);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:0;
+  }
+  #scr-victory.hidden{display:none;}
+  .victory-box{
+    background:var(--pan);border:1px solid var(--bdr);
+    padding:44px 56px;display:flex;flex-direction:column;
+    align-items:center;gap:18px;min-width:340px;
+    box-shadow:0 0 60px rgba(0,255,136,0.08);
+  }
+  .victory-title{
+    font-family:'Orbitron',sans-serif;font-weight:900;
+    font-size:11px;letter-spacing:6px;color:var(--dim);
+  }
+  .victory-name{
+    font-family:'Orbitron',sans-serif;font-weight:900;
+    font-size:32px;letter-spacing:4px;color:var(--ph);
+    text-shadow:0 0 24px rgba(0,255,136,0.45);
+    text-align:center;
+  }
+  .victory-name.loss{color:var(--red);text-shadow:0 0 24px rgba(255,68,68,0.35);}
+  .victory-sub{
+    font-size:9px;color:var(--dim);letter-spacing:3px;text-align:center;
+  }
+  .victory-stats{
+    font-size:9px;color:var(--phd);letter-spacing:1px;
+    text-align:center;line-height:1.9;border-top:1px solid var(--bdr);
+    padding-top:14px;width:100%;
+  }
+
   /* ── AUTH / LOBBY / WAITING OVERLAY SCREENS ─────────────────── */
   .screen-overlay{
     position:fixed;inset:0;z-index:500;
@@ -378,6 +486,17 @@
   </div>
 </div>
 
+<!-- ── VICTORY SCREEN ───────────────────────────────────────── -->
+<div id="scr-victory" class="hidden">
+  <div class="victory-box">
+    <div class="victory-title">// ENGAGEMENT COMPLETE</div>
+    <div class="victory-name" id="vict-headline">VICTORY</div>
+    <div class="victory-sub" id="vict-sub">ALL ENEMY UNITS ELIMINATED</div>
+    <div class="victory-stats" id="vict-stats"></div>
+    <button class="auth-btn" style="margin-top:8px;width:100%;" onclick="doEndGame()">RETURN TO LOBBY</button>
+  </div>
+</div>
+
 <header>
   <div class="logo">IRON<em>FIELD</em></div>
   <div class="hstat">
@@ -442,6 +561,13 @@
     <div class="ib"><div class="lbl">CURSOR</div><div class="coord" id="rCur">—</div></div>
     <div class="wheel-wrap"><canvas id="wheel" width="76" height="76"></canvas></div>
     <div class="move-hint" id="mhint">Select a unit to begin</div>
+    <div id="wpicker">
+      <div class="wp-title">// WEAPONS</div>
+      <div class="wp-target" id="wpTarget">—</div>
+      <div id="wpBtns"></div>
+      <div class="wp-hint" id="wpHint">select a weapon, then click an enemy</div>
+      <button class="wp-clear" id="wpClear" onclick="clearFireOrder()">CLEAR ORDER</button>
+    </div>
     <div class="ptitle">// LOG</div>
     <div class="logarea" id="log"></div>
   </div>
@@ -917,6 +1043,17 @@ function onGameUpdate(payload) {
     return;
   }
 
+  // Game over — show victory screen (non-host receives this via realtime)
+  if (g.status === 'complete' && g.state) {
+    loadStateFromGame(g.state);
+    buildRoster(); updatePanel(); draw();
+    // Determine winner from surviving mechs
+    const p1alive = mechs.filter(m => m.player === 1 && !m.destroyed).length;
+    const winner  = p1alive > 0 ? 1 : 2;
+    showVictory(winner, g.state);
+    return;
+  }
+
   // Already in game — only apply incoming state when the turn has actually advanced.
   // This prevents onGameUpdate from overwriting a player's local planning-phase moves.
   if (g.status === 'active' && g.turn_number && g.turn_number !== turnNumber) {
@@ -1047,11 +1184,13 @@ async function resolveTurn(plans) {
     if (p1alive === 0 || p2alive === 0) {
       const winner = p1alive > 0 ? 1 : 2;
       addLog(`══ PLAYER ${winner} WINS — ALL ENEMY MECHS ELIMINATED ══`, 'ok');
+      const finalState = captureState();
       await db.from('ironfield_games')
-        .update({ status: 'complete', state: captureState() })
+        .update({ status: 'complete', state: finalState })
         .eq('id', gameId);
       isResolving = false;
       buildRoster(); updatePanel(); draw();
+      showVictory(winner, finalState);
       return;
     }
   }
@@ -1097,8 +1236,11 @@ function resetPlanUI() {
   myPlanSubmitted    = false;
   enemyPlanSubmitted = false;
   fireOrders         = [];
+  selectedWeapon     = null;
+  hoveredEnemy       = null;
   mechs.forEach(m => m.mpSpent = 0);
   updatePlanBar();
+  updateWeaponPicker(null);
 }
 
 // ── GAME STATE SERIALISATION ──────────────────────────────────────
@@ -1116,6 +1258,8 @@ function captureState() {
       destroyed:       m.destroyed       ?? false,
       armour:          m.armour          ?? { ...MECH_CLASSES[m.cls]?.baseArmour    },
       structure:       m.structure       ?? { ...MECH_CLASSES[m.cls]?.baseStructure },
+      disabledLocs:    m.disabledLocs    ?? [],
+      legDestroyed:    m.legDestroyed    ?? false,
     })),
     turn: turnNumber
   };
@@ -1139,6 +1283,8 @@ function loadStateFromGame(state) {
       destroyed:       saved.destroyed       ?? false,
       armour:          saved.armour          ?? { ...cls.baseArmour    },
       structure:       saved.structure       ?? { ...cls.baseStructure },
+      disabledLocs:    saved.disabledLocs    ?? [],
+      legDestroyed:    saved.legDestroyed    ?? false,
     };
   });
   if (state.turn) turnNumber = state.turn;
@@ -1216,6 +1362,34 @@ async function logEvent(type, payload = null) {
   } catch(e) { /* non-critical */ }
 }
 
+// ── VICTORY SCREEN ───────────────────────────────────────────────
+function showVictory(winner, state) {
+  const iWin    = winner === myPlayer;
+  const overlay = document.getElementById('scr-victory');
+  const headline= document.getElementById('vict-headline');
+  const sub     = document.getElementById('vict-sub');
+  const stats   = document.getElementById('vict-stats');
+
+  headline.textContent = iWin ? 'VICTORY' : 'DEFEAT';
+  headline.className   = iWin ? 'victory-name' : 'victory-name loss';
+  sub.textContent      = `PLAYER ${winner} WINS  ·  ALL ENEMY UNITS ELIMINATED`;
+
+  // Survival summary from final state
+  if (state?.mechs) {
+    const lines = [1, 2].map(p => {
+      const all      = state.mechs.filter(m => m.player === p);
+      const surviving = all.filter(m => !m.destroyed);
+      const armTot   = surviving.reduce((s, m) => {
+        return s + (m.armour ? Object.values(m.armour).reduce((a,b)=>a+b,0) : 0);
+      }, 0);
+      return `P${p}  ${surviving.length}/${all.length} MECHS STANDING  ·  ${armTot} ARMOUR REMAINING`;
+    });
+    stats.innerHTML = lines.join('<br>');
+  }
+
+  overlay.classList.remove('hidden');
+}
+
 // ── STATE RESET ───────────────────────────────────────────────────
 function resetMultiState() {
   gameId = null; joinCode = null; myPlayer = null;
@@ -1273,6 +1447,9 @@ let isPanning = false, panStartX = 0, panStartY = 0, panOx = 0, panOy = 0;
 let gamePhase = 'planning'; // 'deployment' | 'planning'
 // fire orders queued this planning phase: [{ attacker_id, target_id, weapon }]
 let fireOrders = [];
+// weapon picker state
+let selectedWeapon = null;   // weaponKey string currently selected in the picker
+let hoveredEnemy   = null;   // mech being hovered in fire mode (for live TN preview)
 
 // ── HEX / TRI GEOMETRY ──────────────────────────────────────────
 function hCentre(q, r) {
@@ -1522,19 +1699,21 @@ const MECH_CLASSES = {
 };
 
 // ── WEAPONS ───────────────────────────────────────────────────────
-// type:     'laser' | 'ballistic' | 'missile'
-// range:    max range in hex units
-// damage:   base damage points per hit
-// tn:       base target number (3D6, roll >= tn to hit)
-// salvo:    missile only — number of warheads in the salvo
+// type:       'laser' | 'ballistic' | 'missile'
+// range:      max range in hex units
+// damage:     base damage points per hit
+// tn:         base target number (3D6, roll >= tn to hit)
+// salvo:      missile only — number of warheads in the salvo
+// mountedIn:  mech location key where this weapon is physically housed
+//             'ra'=right arm  'la'=left arm  'ct'=centre torso
 const WEAPONS = {
-  laser_light:    { label:'LT LASER', type:'laser',     range: 6, damage: 3, tn:10 },
-  laser_medium:   { label:'MD LASER', type:'laser',     range: 9, damage: 5, tn:10 },
-  laser_large:    { label:'LG LASER', type:'laser',     range:14, damage: 8, tn:10 },
-  ballistic_ac5:  { label:'AC/5',     type:'ballistic', range:10, damage: 5, tn:10 },
-  ballistic_ac10: { label:'AC/10',    type:'ballistic', range: 7, damage:10, tn:10 },
-  missile_srm2:   { label:'SRM-2',    type:'missile',   range: 6, damage: 4, tn:10, salvo:2 },
-  missile_lrm5:   { label:'LRM-5',    type:'missile',   range:18, damage: 5, tn:10, salvo:5 },
+  laser_light:    { label:'LT LASER', type:'laser',     range: 6, damage: 3, tn:10, mountedIn:'ra' },
+  laser_medium:   { label:'MD LASER', type:'laser',     range: 9, damage: 5, tn:10, mountedIn:'ra' },
+  laser_large:    { label:'LG LASER', type:'laser',     range:14, damage: 8, tn:10, mountedIn:'ra' },
+  ballistic_ac5:  { label:'AC/5',     type:'ballistic', range:10, damage: 5, tn:10, mountedIn:'la' },
+  ballistic_ac10: { label:'AC/10',    type:'ballistic', range: 7, damage:10, tn:10, mountedIn:'la' },
+  missile_srm2:   { label:'SRM-2',    type:'missile',   range: 6, damage: 4, tn:10, salvo:2, mountedIn:'la' },
+  missile_lrm5:   { label:'LRM-5',    type:'missile',   range:18, damage: 5, tn:10, salvo:5, mountedIn:'ct' },
 };
 
 let mechs = [
@@ -1546,8 +1725,20 @@ let mechs = [
   { id:'p2c', player:2, name:'LANCE-2C', cls:'heavy',  facing:180, wx:0, wy:0, mpSpent:0 },
 ];
 
-function mechMpMax(mech)  { return MECH_CLASSES[mech.cls]?.mpMax  ?? 12; }
+// mpMax is halved if either leg has been structurally destroyed
+function mechMpMax(mech) {
+  const base = MECH_CLASSES[mech.cls]?.mpMax ?? 12;
+  return mech.legDestroyed ? Math.max(1, Math.floor(base / 2)) : base;
+}
 function mechMpLeft(mech) { return mechMpMax(mech) - mech.mpSpent; }
+
+// Returns true if the weapon is disabled due to its mount location being destroyed
+function mechWeaponDisabled(mech, weaponKey) {
+  const w = WEAPONS[weaponKey];
+  if (!w || !w.mountedIn) return false;
+  if (!mech.disabledLocs) return false;
+  return mech.disabledLocs.includes(w.mountedIn);
+}
 
 // ── COMBAT HELPERS ────────────────────────────────────────────────
 
@@ -1596,8 +1787,12 @@ const LOC_LABEL = {
 };
 
 // Calculate effective target number for a shot.
-// Returns null if the shot is impossible (out of range or no arc).
+// Returns null if the shot is impossible (out of range, no arc, or weapon disabled).
 function calcToHit(attacker, target, weapon) {
+  // Weapon disabled (mount location destroyed)
+  const weaponKey = Object.keys(WEAPONS).find(k => WEAPONS[k] === weapon);
+  if (weaponKey && mechWeaponDisabled(attacker, weaponKey)) return null;
+
   // Arc check
   const arc = isInFireArc(attacker, target);
   if (arc === 'none') return null;
@@ -1631,11 +1826,12 @@ function calcToHit(attacker, target, weapon) {
   return Math.max(3, Math.min(18, tn));
 }
 
-// Apply damage to a mech location, returning a brief result string for the log.
+// Apply damage to a mech location, returning an array of log strings.
 // penetrating = true means damage bypasses armour (ballistic doubles).
 function applyDamage(mech, location, rawDamage, penetrating = false) {
   if (!mech.armour)    mech.armour    = { ...MECH_CLASSES[mech.cls].baseArmour    };
   if (!mech.structure) mech.structure = { ...MECH_CLASSES[mech.cls].baseStructure };
+  if (!mech.disabledLocs) mech.disabledLocs = [];
 
   let strDmg = 0;
   if (penetrating) {
@@ -1648,24 +1844,52 @@ function applyDamage(mech, location, rawDamage, penetrating = false) {
     mech.structure[location] = Math.max(0, mech.structure[location] - strDmg);
   }
 
-  const locLabel   = LOC_LABEL[location] ?? location.toUpperCase();
-  const destroyed  = mech.structure[location] <= 0;
-  let result = `${locLabel} -${rawDamage}dmg${penetrating?' [PENETRATING]':''}`;
+  const locLabel  = LOC_LABEL[location] ?? location.toUpperCase();
+  const destroyed = mech.structure[location] <= 0;
+  const lines     = [];
+
+  let result = `${locLabel} -${rawDamage}dmg${penetrating ? ' [PENETRATING]' : ''}`;
 
   if (destroyed) {
-    result += ` *** ${locLabel} DESTROYED ***`;
+    result += `  ▸ ${locLabel} DESTROYED`;
+
+    // CT or HEAD: mech eliminated
     if (location === 'ct' || location === 'head') {
       mech.destroyed = true;
-      result += ` *** ${mech.name} ELIMINATED ***`;
+      result += `  ▸ ${mech.name} ELIMINATED`;
+    }
+
+    // ARM destruction: silence all weapons mounted there
+    if ((location === 'la' || location === 'ra') && !mech.disabledLocs.includes(location)) {
+      mech.disabledLocs.push(location);
+      const silenced = MECH_CLASSES[mech.cls]?.weapons
+        .filter(wk => WEAPONS[wk]?.mountedIn === location)
+        .map(wk => WEAPONS[wk].label)
+        .join(', ');
+      if (silenced) lines.push(`    ⚠ ${locLabel} lost — ${silenced} offline`);
+    }
+
+    // LEG destruction: halve movement (once, even if both legs are lost)
+    if ((location === 'll' || location === 'rl') && !mech.legDestroyed) {
+      mech.legDestroyed = true;
+      const newMax = mechMpMax(mech); // already halved now
+      lines.push(`    ⚠ LEG DESTROYED — movement halved (max ${newMax} MP)`);
     }
   }
-  return result;
+
+  lines.unshift(result);
+  return lines;
 }
 
 // Resolve a single fire order.  Returns array of log strings.
 function resolveFire(attacker, target, weaponKey) {
   const weapon = WEAPONS[weaponKey];
   if (!weapon) return [`${attacker.name}: unknown weapon ${weaponKey}`];
+
+  // Check weapon isn't disabled on the attacker
+  if (mechWeaponDisabled(attacker, weaponKey)) {
+    return [`${attacker.name}: ${weapon.label} offline — mount destroyed`];
+  }
 
   const tn = calcToHit(attacker, target, weapon);
   if (tn === null) {
@@ -1683,7 +1907,9 @@ function resolveFire(attacker, target, weaponKey) {
       const loc   = HIT_LOC[roll3d6().total];
       const dmg   = weapon.damage + (roll.doubles ? 1 : 0);
       const extra = roll.doubles ? ' (focused beam +1)' : '';
-      lines.push(`  └ ${applyDamage(target, loc, dmg)}${extra}`);
+      applyDamage(target, loc, dmg).forEach((l, i) =>
+        lines.push(`  ${i===0?'└':'  '} ${l}${i===0?extra:''}`)
+      );
     }
 
   } else if (weapon.type === 'ballistic') {
@@ -1693,7 +1919,9 @@ function resolveFire(attacker, target, weaponKey) {
     if (hit) {
       const loc         = HIT_LOC[roll3d6().total];
       const penetrating = roll.doubles;
-      lines.push(`  └ ${applyDamage(target, loc, weapon.damage, penetrating)}`);
+      applyDamage(target, loc, weapon.damage, penetrating).forEach((l, i) =>
+        lines.push(`  ${i===0?'└':'  '} ${l}`)
+      );
     }
 
   } else if (weapon.type === 'missile') {
@@ -1708,12 +1936,12 @@ function resolveFire(attacker, target, weaponKey) {
       if (guided) {
         const loc = HIT_LOC[roll3d6().total];
         for (let i = 0; i < hits; i++) {
-          lines.push(`    └ ${applyDamage(target, loc, dmgPerMissile)}`);
+          applyDamage(target, loc, dmgPerMissile).forEach(l => lines.push(`    └ ${l}`));
         }
       } else {
         for (let i = 0; i < hits; i++) {
           const loc = HIT_LOC[roll3d6().total];
-          lines.push(`    └ ${applyDamage(target, loc, dmgPerMissile)}`);
+          applyDamage(target, loc, dmgPerMissile).forEach(l => lines.push(`    └ ${l}`));
         }
       }
     }
@@ -2037,6 +2265,22 @@ function drawFacingCones() {
       : (isSel ? '#ff4444' : '#881111');
     ctx.fill();
 
+    // Destroyed wreck — dim X over the mech position
+    if (mech.destroyed) {
+      const r = OUTLINE_R * 0.55;
+      ctx.beginPath();
+      ctx.moveTo(cx - r, cy - r); ctx.lineTo(cx + r, cy + r);
+      ctx.moveTo(cx + r, cy - r); ctx.lineTo(cx - r, cy + r);
+      ctx.strokeStyle = 'rgba(180,40,40,0.7)';
+      ctx.lineWidth   = 2.5;
+      ctx.stroke();
+      ctx.font      = 'bold 8px Orbitron';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(180,40,40,0.8)';
+      ctx.fillText('DESTROYED', cx, cy + OUTLINE_R + 14);
+      return;
+    }
+
     // Name label (selected only)
     if (isSel) {
       ctx.font      = 'bold 9px Orbitron';
@@ -2263,20 +2507,27 @@ function setMode(m) {
   document.getElementById(`b-${bmap[m]||m}`).classList.add('on');
   document.getElementById('hmode').textContent = m.toUpperCase();
   if (m === 'los') { losId = selId; }
+  if (m !== 'fire') { selectedWeapon = null; hoveredEnemy = null; }
   const hints = {
     select: 'Click a unit to select it',
     move:   'Click any vertex (amber dot) to move',
     rotate: 'Click to set facing direction',
     los:    'Hover to preview line of sight',
-    fire:   'Select your mech, then click an enemy to assign a fire order'
+    fire:   'Select your mech, pick a weapon, then click an enemy'
   };
   document.getElementById('mhint').textContent = hints[m] || '';
+  updateWeaponPicker(null);
   hovVert = null; draw();
 }
 function selMech(id) {
   selId = id;
   if (mode === 'los') losId = id;
-  updatePanel(); buildRoster(); draw();
+  // When selecting a new mech in fire mode, pre-select its currently ordered weapon (if any)
+  if (mode === 'fire') {
+    const order = fireOrders.find(fo => fo.attacker_id === id);
+    selectedWeapon = order ? order.weapon : null;
+  }
+  updatePanel(); buildRoster(); updateWeaponPicker(null); draw();
 }
 function updatePanel() {
   const m = mechs.find(x => x.id === selId);
@@ -2308,7 +2559,112 @@ function updatePanel() {
   document.getElementById('mpFill').className   = `mpbar-fill ${cls}`;
   drawWheel();
 }
-function buildRoster() {
+// ── WEAPON PICKER ────────────────────────────────────────────────
+// hovEnemy: the mech currently being hovered (may be null)
+function updateWeaponPicker(hovEnemy) {
+  const picker = document.getElementById('wpicker');
+  const visible = mode === 'fire';
+  picker.classList.toggle('visible', visible);
+  if (!visible) return;
+
+  const btnsEl   = document.getElementById('wpBtns');
+  const targetEl = document.getElementById('wpTarget');
+  const hintEl   = document.getElementById('wpHint');
+  const clearEl  = document.getElementById('wpClear');
+
+  const attacker = mechs.find(m => m.id === selId && m.player === myPlayer && !m.destroyed);
+  if (!attacker) {
+    targetEl.textContent = '—';
+    btnsEl.innerHTML = '<div style="font-size:9px;color:var(--dim);padding:3px 0;">Select your mech first</div>';
+    hintEl.textContent = 'click one of your mechs';
+    clearEl.style.display = 'none';
+    return;
+  }
+
+  // Build the preview target — either the hovered enemy or the one already ordered
+  const existingOrder = fireOrders.find(fo => fo.attacker_id === attacker.id);
+  const previewTarget = hovEnemy ?? (existingOrder ? mechs.find(m => m.id === existingOrder.target_id) : null);
+
+  // Target label
+  if (previewTarget) {
+    targetEl.textContent = `→ ${previewTarget.name}`;
+  } else {
+    targetEl.textContent = existingOrder
+      ? `→ ${mechs.find(m => m.id === existingOrder.target_id)?.name ?? '?'}`
+      : '— no target —';
+  }
+
+  // Build weapon buttons
+  const cls = MECH_CLASSES[attacker.cls];
+  btnsEl.innerHTML = '';
+  cls.weapons.forEach(wKey => {
+    const w   = WEAPONS[wKey];
+    if (!w) return;
+    const disabled = mechWeaponDisabled(attacker, wKey);
+    const tn  = (!disabled && previewTarget) ? calcToHit(attacker, previewTarget, w) : null;
+    const impossible = !disabled && tn === null && previewTarget !== null;
+    const isSel = selectedWeapon === wKey && !disabled;
+
+    const btn = document.createElement('button');
+    btn.className = `wp-btn${isSel ? ' sel' : ''}${disabled ? ' disabled-weapon' : ''}`;
+    btn.disabled  = impossible || disabled;
+
+    let tnStr = '';
+    let tnCls = '';
+    if (disabled) {
+      tnStr = 'OFFLINE';
+      tnCls = 'bad';
+    } else if (previewTarget) {
+      if (tn === null) {
+        tnStr = 'NO SHOT';
+        tnCls = 'bad';
+      } else {
+        tnStr = `TN:${tn}`;
+        tnCls = tn <= 10 ? 'ok' : tn <= 14 ? '' : 'bad';
+      }
+    }
+
+    const mountLabel = w.mountedIn ? ` [${w.mountedIn.toUpperCase()}]` : '';
+    const rangeLabel = disabled
+      ? `mount destroyed${mountLabel}`
+      : `RNG:${w.range}  DMG:${w.damage}${w.salvo ? `  SLV:${w.salvo}` : ''}`;
+
+    btn.innerHTML = `
+      <span class="wlabel">${w.label}${tnStr ? `<span class="wtn ${tnCls}">${tnStr}</span>` : ''}</span>
+      <span class="wstats">${disabled ? '' : w.type.toUpperCase() + '  '}${rangeLabel}</span>`;
+
+    if (!disabled) {
+      btn.onclick = () => {
+        selectedWeapon = (selectedWeapon === wKey) ? null : wKey;
+        updateWeaponPicker(hovEnemy);
+      };
+    }
+    btnsEl.appendChild(btn);
+  });
+
+  // Hint text
+  if (!selectedWeapon) {
+    hintEl.textContent = 'select a weapon, then click an enemy';
+  } else if (!previewTarget) {
+    hintEl.textContent = `${WEAPONS[selectedWeapon]?.label} ready — click an enemy`;
+  } else if (existingOrder) {
+    hintEl.textContent = 'order set — click enemy to retarget';
+  } else {
+    hintEl.textContent = 'click an enemy to assign fire order';
+  }
+
+  clearEl.style.display = existingOrder ? '' : 'none';
+}
+
+function clearFireOrder() {
+  if (!selId) return;
+  fireOrders = fireOrders.filter(fo => fo.attacker_id !== selId);
+  addLog(`${mechs.find(m => m.id === selId)?.name ?? selId}: fire order cleared`);
+  updateWeaponPicker(null);
+  buildRoster(); draw();
+}
+
+
   const list = document.getElementById('mlist');
   list.innerHTML = '';
   mechs.forEach(mech => {
@@ -2327,6 +2683,48 @@ function buildRoster() {
     for (let i = 0; i < pipCount; i++)
       pipHtml += `<div class="pip ${i < usedCount ? 'used' : 'free'}"></div>`;
     pipHtml += '</div>';
+    // Armour / structure bars
+    const armour    = mech.armour    ?? MECH_CLASSES[mech.cls]?.baseArmour;
+    const structure = mech.structure ?? MECH_CLASSES[mech.cls]?.baseStructure;
+    const baseArm   = MECH_CLASSES[mech.cls]?.baseArmour;
+    const baseStr   = MECH_CLASSES[mech.cls]?.baseStructure;
+    const totalArm    = armour    ? Object.values(armour).reduce((a,b)=>a+b,0)    : 0;
+    const totalStr    = structure ? Object.values(structure).reduce((a,b)=>a+b,0) : 0;
+    const maxArm      = baseArm   ? Object.values(baseArm).reduce((a,b)=>a+b,0)   : 1;
+    const maxStr      = baseStr   ? Object.values(baseStr).reduce((a,b)=>a+b,0)   : 1;
+    const armPct      = Math.max(0, totalArm / maxArm * 100);
+    const strPct      = Math.max(0, totalStr / maxStr * 100);
+    const armCls      = armPct > 50 ? 'arm' : armPct > 25 ? 'arm warn' : 'arm crit';
+    const hpHtml = `<div class="hpbars">
+      <div class="hprow">
+        <span class="lbl">ARM</span>
+        <div class="hptrack"><div class="hpfill ${armCls}" style="width:${armPct.toFixed(1)}%"></div></div>
+        <span class="hpnum">${totalArm}/${maxArm}</span>
+      </div>
+      <div class="hprow">
+        <span class="lbl">STR</span>
+        <div class="hptrack"><div class="hpfill str" style="width:${strPct.toFixed(1)}%"></div></div>
+        <span class="hpnum">${totalStr}/${maxStr}</span>
+      </div>
+    </div>`;
+
+    // Disabled weapons / leg status
+    const cls2 = MECH_CLASSES[mech.cls];
+    let statusHtml = '';
+    if (mech.legDestroyed) {
+      statusHtml += `<div class="sr" style="color:var(--red);margin-top:2px;font-size:8px;">
+        <span>⚠ LEG</span><span>MOVEMENT HALVED</span></div>`;
+    }
+    if (mech.disabledLocs && mech.disabledLocs.length > 0) {
+      cls2?.weapons.forEach(wk => {
+        if (mechWeaponDisabled(mech, wk)) {
+          const w = WEAPONS[wk];
+          statusHtml += `<div class="sr" style="color:var(--red);margin-top:2px;font-size:8px;">
+            <span>⚠ ${w?.label ?? wk}</span><span>OFFLINE</span></div>`;
+        }
+      });
+    }
+
     // Fire order annotations
     const myOrder    = fireOrders.find(fo => fo.attacker_id === mech.id);
     const isTargeted = !isMine && fireOrders.some(fo => fo.target_id === mech.id);
@@ -2343,12 +2741,13 @@ function buildRoster() {
         <div class="sr"><span>CLASS</span><span class="v">${cls?.label ?? mech.cls}</span></div>
         <div class="sr"><span>FACING</span><span class="v">${mech.facing}°</span></div>
         <div class="sr"><span>MP</span><span class="v">${mpLeft}/${mpMax}</span></div>
-        ${pipHtml}${fireHtml}
+        ${pipHtml}${hpHtml}${statusHtml}${fireHtml}
       </div>`;
     const c = document.createElement('div');
-    c.className = `mc ${isP1?'p1':'p2'} ${isSel?'sel':''} ${isTargeted?'fire-target':''}`;
+    const destroyedCls = mech.destroyed ? 'destroyed' : '';
+    c.className = `mc ${isP1?'p1':'p2'} ${isSel?'sel':''} ${isTargeted?'fire-target':''} ${destroyedCls}`.trim();
     c.innerHTML = inner;
-    if (!isMine) { c.style.opacity = '0.35'; c.style.cursor = 'default'; }
+    if (!isMine || mech.destroyed) { c.style.opacity = mech.destroyed ? '' : '0.35'; c.style.cursor = 'default'; }
     else { c.onclick = () => selMech(mech.id); }
     list.appendChild(c);
   });
@@ -2384,6 +2783,22 @@ canvas.addEventListener('mousemove', e => {
       } else { currentPath = null; }
     }
   }
+
+  // Fire mode: track which enemy is being hovered for live TN preview
+  if (mode === 'fire') {
+    const nm = mechs.reduce((b, m) => {
+      const d = Math.hypot(wx-m.wx, wy-m.wy);
+      return (!b || d < b.d) ? { m, d } : b;
+    }, null);
+    const nearMech = nm && nm.d < OUTLINE_R * 0.55 ? nm.m : null;
+    const newHovEnemy = (nearMech && nearMech.player !== myPlayer && !nearMech.destroyed)
+      ? nearMech : null;
+    if ((newHovEnemy?.id ?? null) !== (hoveredEnemy?.id ?? null)) {
+      hoveredEnemy = newHovEnemy;
+      updateWeaponPicker(hoveredEnemy);
+    }
+  }
+
   const pathCost = (mode === 'move' && currentPath) ? currentPath.length - 1 : null;
   const costStr  = pathCost !== null ? `  COST:${pathCost}` : '';
   document.getElementById('rCur').textContent = `hex(${tri.q},${tri.r}) t[${tri.t}]${costStr}`;
@@ -2397,6 +2812,7 @@ canvas.addEventListener('mousemove', e => {
 });
 canvas.addEventListener('mouseleave', () => {
   mHex=null; mTriKey=null; losPt=null; hovVert=null; currentPath=null;
+  if (hoveredEnemy) { hoveredEnemy = null; updateWeaponPicker(null); }
   document.getElementById('tip').style.display='none';
   draw();
 });
@@ -2463,28 +2879,39 @@ canvas.addEventListener('click', e => {
       selMech(near.id);
       return;
     }
-    // Clicking enemy mech assigns / replaces the fire order for the selected attacker
+    // Clicking an enemy assigns a fire order using the selected weapon
     if (!selId) {
       addLog('FIRE: select one of your mechs first', 'bad'); return;
     }
     const attacker = mechs.find(m => m.id === selId);
     if (!attacker || attacker.destroyed || near.destroyed) return;
 
-    // Pick the first weapon that can reach — simple default for now
-    const cls   = MECH_CLASSES[attacker.cls];
-    const wKey  = cls.weapons.find(wk => {
-      const w = WEAPONS[wk];
-      return w && hexDist(attacker, near) <= w.range;
-    }) ?? cls.weapons[0];
+    // Determine which weapon to use
+    const cls = MECH_CLASSES[attacker.cls];
+    let wKey = selectedWeapon;
+
+    // If no weapon explicitly selected, try to find the first valid one (fallback)
+    if (!wKey || !cls.weapons.includes(wKey)) {
+      wKey = cls.weapons.find(k => {
+        const w = WEAPONS[k];
+        return w && calcToHit(attacker, near, w) !== null;
+      }) ?? cls.weapons[0];
+    }
+
+    // Validate the shot is possible
+    const w  = WEAPONS[wKey];
+    const tn = calcToHit(attacker, near, w);
+    if (tn === null) {
+      addLog(`${attacker.name}: ${w.label} — NO SHOT on ${near.name} (out of range or arc)`, 'bad');
+      return;
+    }
 
     // Replace any existing order from this attacker
     fireOrders = fireOrders.filter(fo => fo.attacker_id !== selId);
     fireOrders.push({ attacker_id: selId, target_id: near.id, weapon: wKey });
 
-    const w = WEAPONS[wKey];
-    const tn = calcToHit(attacker, near, w);
-    const tnStr = tn !== null ? ` [TN:${tn}]` : ' [OUT OF ARC/RANGE]';
-    addLog(`${attacker.name} → ${near.name} : ${w.label}${tnStr}`, 'ok');
+    addLog(`${attacker.name} → ${near.name} : ${w.label}  [TN:${tn}]`, 'ok');
+    updateWeaponPicker(null);
     buildRoster(); draw();
   }
 });
