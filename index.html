@@ -212,6 +212,11 @@
   .hpfill.arm.warn{background:var(--amb);}
   .hpfill.arm.crit{background:var(--red);}
   .hpfill.str{background:#aa3333;}
+  .hpfill.heat-cool{background:#3399ff;}
+  .hpfill.heat-warm{background:var(--amb);}
+  .hpfill.heat-hot {background:#ff6600;}
+  .hpfill.heat-crit{background:var(--red);animation:heatpulse 0.7s step-end infinite;}
+  @keyframes heatpulse{50%{opacity:0.4;}}
   .hpnum{font-size:7px;color:var(--dim);white-space:nowrap;min-width:22px;text-align:right;}
   /* destroyed mech card */
   .mc.destroyed{opacity:0.28 !important;cursor:default !important;}
@@ -1195,6 +1200,56 @@ async function resolveTurn(plans) {
     }
   }
 
+  // 3b. Heat phase — apply generated heat, dissipate, check shutdown
+  {
+    const heatLines = [];
+    mechs.forEach(m => {
+      if (m.destroyed) return;
+      if (!m.heat) m.heat = 0;
+
+      // Dissipate first (start of new turn)
+      m.heat = Math.max(0, m.heat - HEAT_DISSIPATION);
+
+      // Apply heat generated this turn by weapons fired
+      const generated = m.heatThisTurn ?? 0;
+      m.heatThisTurn  = 0;
+      m.heat += generated;
+
+      const cap     = mechHeatCap(m);
+      const heatPct = m.heat / cap;
+
+      // Wake up a previously shut-down mech (it had a turn to cool)
+      if (m.shutDown) {
+        m.shutDown = false;
+        heatLines.push(`  ${m.name}: SYSTEMS RESTART (heat ${m.heat}/${cap})`);
+        return; // no further heat consequences this turn
+      }
+
+      if (generated > 0) {
+        heatLines.push(`  ${m.name}: +${generated} heat → ${m.heat}/${cap}` +
+          (heatPct >= 0.75 ? '  ⚠ CRITICAL' : heatPct >= 0.50 ? '  ⚠ HOT' : ''));
+      }
+
+      // Shutdown check at ≥100% cap
+      if (m.heat >= cap) {
+        const shutRoll = roll3d6();
+        if (shutRoll.total <= 7) {
+          m.shutDown = true;
+          m.heat     = cap; // clamp — can't store more than cap
+          heatLines.push(`  ${m.name}: SHUTDOWN — rolled ${shutRoll.total} (need 8+) — misses next turn`);
+        } else {
+          heatLines.push(`  ${m.name}: OVERHEAT — rolled ${shutRoll.total}, stays online (barely)`);
+          m.heat = cap; // clamp
+        }
+      }
+    });
+
+    if (heatLines.length > 0) {
+      addLog('── HEAT ──', 'ok');
+      heatLines.forEach(l => addLog(l, l.includes('SHUTDOWN') ? 'bad' : ''));
+    }
+  }
+
   // 4. Increment turn, reset phase, write new state to DB
   turnNumber++;
   const newState = captureState();
@@ -1260,6 +1315,8 @@ function captureState() {
       structure:       m.structure       ?? { ...MECH_CLASSES[m.cls]?.baseStructure },
       disabledLocs:    m.disabledLocs    ?? [],
       legDestroyed:    m.legDestroyed    ?? false,
+      heat:            m.heat            ?? 0,
+      shutDown:        m.shutDown        ?? false,
     })),
     turn: turnNumber
   };
@@ -1285,6 +1342,8 @@ function loadStateFromGame(state) {
       structure:       saved.structure       ?? { ...cls.baseStructure },
       disabledLocs:    saved.disabledLocs    ?? [],
       legDestroyed:    saved.legDestroyed    ?? false,
+      heat:            saved.heat            ?? 0,
+      shutDown:        saved.shutDown        ?? false,
     };
   });
   if (state.turn) turnNumber = state.turn;
@@ -1679,19 +1738,19 @@ function getCoverage(mech) {
 // class   = label for display
 const MECH_CLASSES = {
   scout: {
-    label:'SCOUT', mpMax:18, color:'#55ffbb',
+    label:'SCOUT', mpMax:18, heatCap:18, color:'#55ffbb',
     weapons: ['laser_light', 'missile_srm2'],
     baseArmour:    { head:2, ct:6,  lt:4,  rt:4,  la:3,  ra:3,  ll:4,  rl:4  },
     baseStructure: { head:1, ct:3,  lt:2,  rt:2,  la:1,  ra:1,  ll:2,  rl:2  },
   },
   medium: {
-    label:'MEDIUM', mpMax:12, color:'#00ff88',
+    label:'MEDIUM', mpMax:12, heatCap:24, color:'#00ff88',
     weapons: ['laser_medium', 'ballistic_ac5'],
     baseArmour:    { head:3, ct:10, lt:8,  rt:8,  la:6,  ra:6,  ll:7,  rl:7  },
     baseStructure: { head:1, ct:5,  lt:4,  rt:4,  la:3,  ra:3,  ll:4,  rl:4  },
   },
   heavy: {
-    label:'HEAVY', mpMax:6, color:'#88ff44',
+    label:'HEAVY', mpMax:6, heatCap:30, color:'#88ff44',
     weapons: ['laser_large', 'ballistic_ac10', 'missile_lrm5'],
     baseArmour:    { head:3, ct:16, lt:12, rt:12, la:10, ra:10, ll:11, rl:11 },
     baseStructure: { head:1, ct:8,  lt:6,  rt:6,  la:5,  ra:5,  ll:7,  rl:7  },
@@ -1703,17 +1762,18 @@ const MECH_CLASSES = {
 // range:      max range in hex units
 // damage:     base damage points per hit
 // tn:         base target number (3D6, roll >= tn to hit)
+// heat:       heat points added to the firing mech on each use
 // salvo:      missile only — number of warheads in the salvo
 // mountedIn:  mech location key where this weapon is physically housed
 //             'ra'=right arm  'la'=left arm  'ct'=centre torso
 const WEAPONS = {
-  laser_light:    { label:'LT LASER', type:'laser',     range: 6, damage: 3, tn:10, mountedIn:'ra' },
-  laser_medium:   { label:'MD LASER', type:'laser',     range: 9, damage: 5, tn:10, mountedIn:'ra' },
-  laser_large:    { label:'LG LASER', type:'laser',     range:14, damage: 8, tn:10, mountedIn:'ra' },
-  ballistic_ac5:  { label:'AC/5',     type:'ballistic', range:10, damage: 5, tn:10, mountedIn:'la' },
-  ballistic_ac10: { label:'AC/10',    type:'ballistic', range: 7, damage:10, tn:10, mountedIn:'la' },
-  missile_srm2:   { label:'SRM-2',    type:'missile',   range: 6, damage: 4, tn:10, salvo:2, mountedIn:'la' },
-  missile_lrm5:   { label:'LRM-5',    type:'missile',   range:18, damage: 5, tn:10, salvo:5, mountedIn:'ct' },
+  laser_light:    { label:'LT LASER', type:'laser',     range: 6, damage: 3, tn:10, heat:2, mountedIn:'ra' },
+  laser_medium:   { label:'MD LASER', type:'laser',     range: 9, damage: 5, tn:10, heat:4, mountedIn:'ra' },
+  laser_large:    { label:'LG LASER', type:'laser',     range:14, damage: 8, tn:10, heat:8, mountedIn:'ra' },
+  ballistic_ac5:  { label:'AC/5',     type:'ballistic', range:10, damage: 5, tn:10, heat:1, mountedIn:'la' },
+  ballistic_ac10: { label:'AC/10',    type:'ballistic', range: 7, damage:10, tn:10, heat:2, mountedIn:'la' },
+  missile_srm2:   { label:'SRM-2',    type:'missile',   range: 6, damage: 4, tn:10, heat:2, salvo:2, mountedIn:'la' },
+  missile_lrm5:   { label:'LRM-5',    type:'missile',   range:18, damage: 5, tn:10, heat:2, salvo:5, mountedIn:'ct' },
 };
 
 let mechs = [
@@ -1738,6 +1798,28 @@ function mechWeaponDisabled(mech, weaponKey) {
   if (!w || !w.mountedIn) return false;
   if (!mech.disabledLocs) return false;
   return mech.disabledLocs.includes(w.mountedIn);
+}
+
+// ── HEAT HELPERS ──────────────────────────────────────────────────
+const HEAT_DISSIPATION = 8;  // heat removed at start of each resolution
+
+function mechHeatCap(mech) {
+  return MECH_CLASSES[mech.cls]?.heatCap ?? 24;
+}
+
+// Returns the TN penalty from current heat (applied during planning phase display
+// and during resolution).  Thresholds: ≥50% cap → +1 TN; ≥75% cap → +2 TN.
+function heatTnPenalty(mech) {
+  const cap  = mechHeatCap(mech);
+  const heat = mech.heat ?? 0;
+  if (heat >= cap * 0.75) return 2;
+  if (heat >= cap * 0.50) return 1;
+  return 0;
+}
+
+// Returns true if the mech is currently shut down from overheating
+function mechShutDown(mech) {
+  return mech.shutDown ?? false;
 }
 
 // ── COMBAT HELPERS ────────────────────────────────────────────────
@@ -1787,8 +1869,11 @@ const LOC_LABEL = {
 };
 
 // Calculate effective target number for a shot.
-// Returns null if the shot is impossible (out of range, no arc, or weapon disabled).
+// Returns null if the shot is impossible (out of range, no arc, weapon disabled, or shut down).
 function calcToHit(attacker, target, weapon) {
+  // Shut down mechs cannot fire
+  if (mechShutDown(attacker)) return null;
+
   // Weapon disabled (mount location destroyed)
   const weaponKey = Object.keys(WEAPONS).find(k => WEAPONS[k] === weapon);
   if (weaponKey && mechWeaponDisabled(attacker, weaponKey)) return null;
@@ -1822,6 +1907,9 @@ function calcToHit(attacker, target, weapon) {
   } else {
     if (tgtMoved >= 9)  tn += 1;
   }
+
+  // Heat penalty — overheating degrades accuracy
+  tn += heatTnPenalty(attacker);
 
   return Math.max(3, Math.min(18, tn));
 }
@@ -1882,9 +1970,15 @@ function applyDamage(mech, location, rawDamage, penetrating = false) {
 }
 
 // Resolve a single fire order.  Returns array of log strings.
+// Also accumulates heat on the attacker (stored in mech.heatThisTurn for batch application).
 function resolveFire(attacker, target, weaponKey) {
   const weapon = WEAPONS[weaponKey];
   if (!weapon) return [`${attacker.name}: unknown weapon ${weaponKey}`];
+
+  // Shut-down mechs cannot fire
+  if (mechShutDown(attacker)) {
+    return [`${attacker.name}: SHUT DOWN — cannot fire`];
+  }
 
   // Check weapon isn't disabled on the attacker
   if (mechWeaponDisabled(attacker, weaponKey)) {
@@ -1895,6 +1989,10 @@ function resolveFire(attacker, target, weaponKey) {
   if (tn === null) {
     return [`${attacker.name} → ${target.name}: ${weapon.label} — NO SHOT (out of range or arc)`];
   }
+
+  // Accumulate heat generated by firing this weapon
+  if (!attacker.heatThisTurn) attacker.heatThisTurn = 0;
+  attacker.heatThisTurn += weapon.heat ?? 0;
 
   const lines = [];
   const header = `${attacker.name} fires ${weapon.label} at ${target.name} [TN:${tn}]`;
@@ -2627,7 +2725,7 @@ function updateWeaponPicker(hovEnemy) {
     const mountLabel = w.mountedIn ? ` [${w.mountedIn.toUpperCase()}]` : '';
     const rangeLabel = disabled
       ? `mount destroyed${mountLabel}`
-      : `RNG:${w.range}  DMG:${w.damage}${w.salvo ? `  SLV:${w.salvo}` : ''}`;
+      : `RNG:${w.range}  DMG:${w.damage}${w.salvo ? `  SLV:${w.salvo}` : ''}  HT:${w.heat ?? 0}`;
 
     btn.innerHTML = `
       <span class="wlabel">${w.label}${tnStr ? `<span class="wtn ${tnCls}">${tnStr}</span>` : ''}</span>
@@ -2683,7 +2781,7 @@ function clearFireOrder() {
     for (let i = 0; i < pipCount; i++)
       pipHtml += `<div class="pip ${i < usedCount ? 'used' : 'free'}"></div>`;
     pipHtml += '</div>';
-    // Armour / structure bars
+    // Armour / structure / heat bars
     const armour    = mech.armour    ?? MECH_CLASSES[mech.cls]?.baseArmour;
     const structure = mech.structure ?? MECH_CLASSES[mech.cls]?.baseStructure;
     const baseArm   = MECH_CLASSES[mech.cls]?.baseArmour;
@@ -2695,6 +2793,13 @@ function clearFireOrder() {
     const armPct      = Math.max(0, totalArm / maxArm * 100);
     const strPct      = Math.max(0, totalStr / maxStr * 100);
     const armCls      = armPct > 50 ? 'arm' : armPct > 25 ? 'arm warn' : 'arm crit';
+    const heatVal     = mech.heat ?? 0;
+    const heatCap     = mechHeatCap(mech);
+    const heatPct     = Math.min(100, heatVal / heatCap * 100);
+    const heatCls     = heatPct >= 100 ? 'heat-crit'
+                      : heatPct >=  75 ? 'heat-hot'
+                      : heatPct >=  50 ? 'heat-warm'
+                      : 'heat-cool';
     const hpHtml = `<div class="hpbars">
       <div class="hprow">
         <span class="lbl">ARM</span>
@@ -2706,11 +2811,20 @@ function clearFireOrder() {
         <div class="hptrack"><div class="hpfill str" style="width:${strPct.toFixed(1)}%"></div></div>
         <span class="hpnum">${totalStr}/${maxStr}</span>
       </div>
+      <div class="hprow">
+        <span class="lbl" style="color:${heatPct>=75?'#ff6600':heatPct>=50?'#ffaa00':'#3399ff'}">HT</span>
+        <div class="hptrack"><div class="hpfill ${heatCls}" style="width:${heatPct.toFixed(1)}%"></div></div>
+        <span class="hpnum" style="color:${heatPct>=75?'#ff6600':heatPct>=50?'#ffaa00':'var(--dim)'}">${heatVal}/${heatCap}</span>
+      </div>
     </div>`;
 
-    // Disabled weapons / leg status
+    // Disabled weapons / leg / shutdown status
     const cls2 = MECH_CLASSES[mech.cls];
     let statusHtml = '';
+    if (mech.shutDown) {
+      statusHtml += `<div class="sr" style="color:var(--red);margin-top:2px;font-size:8px;letter-spacing:1px;">
+        <span>⚠ SHUTDOWN</span><span>MISSES THIS TURN</span></div>`;
+    }
     if (mech.legDestroyed) {
       statusHtml += `<div class="sr" style="color:var(--red);margin-top:2px;font-size:8px;">
         <span>⚠ LEG</span><span>MOVEMENT HALVED</span></div>`;
@@ -2835,6 +2949,9 @@ canvas.addEventListener('click', e => {
     if (near && near.id !== selId) { selMech(near.id); return; }
     if (selId && hovVert) {
       const m    = mechs.find(x => x.id === selId);
+      if (mechShutDown(m)) {
+        addLog(`${m.name}: SHUT DOWN — cannot move`, 'bad'); return;
+      }
       const cost = currentPath ? currentPath.length - 1 : 0;
       const mpLeft = mechMpLeft(m);
       if (cost > mpLeft) {
