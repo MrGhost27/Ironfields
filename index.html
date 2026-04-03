@@ -582,7 +582,7 @@
 // ================================================================
 //  IRONFIELD  Phase 2 — Supabase multiplayer
 //
-//  Auth:     Supabase email/password (username@ironfield.game trick)
+//  Auth:     Supabase email/password (username@thedeck.game trick)
 //  Lobby:    Create game / join by code
 //  Waiting:  2-seat claim system, realtime sync
 //  WeGo:     Both players submit turn plans → simultaneous resolution
@@ -677,12 +677,17 @@ async function doLogin() {
   if (!user) { err.textContent = 'Enter your callsign.'; return; }
   if (!pass) { err.textContent = 'Enter your password.'; return; }
   btn.disabled = true; btn.textContent = 'SIGNING IN…';
-  const { data, error } = await db.auth.signInWithPassword({
+  // Try current domain first, fall back to legacy domain for older accounts
+  let { data, error } = await db.auth.signInWithPassword({
     email: `${user}@thedeck.game`, password: pass
   });
+  if (error) {
+    ({ data, error } = await db.auth.signInWithPassword({
+      email: `${user}@ironfield.game`, password: pass
+    }));
+  }
   btn.disabled = false; btn.textContent = 'SIGN IN';
   if (error) {
-    // Show the real error so we can diagnose — will clean up later
     err.textContent = error.message;
     console.error('Login error:', error);
     return;
@@ -2763,6 +2768,7 @@ function clearFireOrder() {
 }
 
 
+function buildRoster() {
   const list = document.getElementById('mlist');
   list.innerHTML = '';
   mechs.forEach(mech => {
