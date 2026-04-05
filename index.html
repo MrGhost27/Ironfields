@@ -90,6 +90,9 @@
   .tb.fire{color:#ff6644;border-color:#3a1100;}
   .tb.fire:hover,.tb.fire.on{border-color:#ff6644;background:rgba(255,102,68,.07);
     box-shadow:0 0 8px rgba(255,102,68,.18);}
+  #b-terrain{color:#88ddff;border-color:#1e3344;}
+  #b-terrain:hover,#b-terrain.on{border-color:#88ddff;background:rgba(136,221,255,.07);
+    box-shadow:0 0 8px rgba(136,221,255,.15);}
   /* Roster card fire-target indicator */
   .mc.fire-target{border-color:#ff6644 !important;background:rgba(255,102,68,.07) !important;}
   .mc.fire-target::after{
@@ -364,6 +367,42 @@
   .seat-btn:hover{color:var(--ph);border-color:var(--ph);}
   .seat-btn.rel{border-color:#441111;color:#884444;}
   .seat-btn.rel:hover{color:#ff4444;border-color:#ff4444;}
+
+  /* ── LANCE BUILDER ──────────────────────────────────────────── */
+  .lance-builder{
+    border:1px solid var(--bdr);padding:12px 14px;
+    display:flex;flex-direction:column;gap:8px;
+  }
+  .lance-builder .lbl{font-size:8px;color:var(--dim);letter-spacing:3px;margin-bottom:2px;}
+  .lance-budget{
+    display:flex;align-items:center;justify-content:space-between;
+    font-size:9px;color:var(--dim);
+  }
+  .lance-budget .pts{font-size:13px;letter-spacing:1px;}
+  .lance-budget .pts.ok   {color:var(--ph);}
+  .lance-budget .pts.over {color:var(--red);}
+  .lance-budget .pts.warn {color:var(--amb);}
+  .lance-slot-row{
+    display:flex;align-items:center;gap:6px;
+  }
+  .lance-slot-label{font-size:9px;color:var(--dim);width:18px;flex-shrink:0;letter-spacing:1px;}
+  .lance-slot-select{
+    flex:1;background:rgba(0,255,136,.04);border:1px solid var(--bdr);
+    color:var(--txt);font-family:'Share Tech Mono',monospace;font-size:9px;
+    padding:4px 7px;outline:none;cursor:pointer;
+  }
+  .lance-slot-select:focus{border-color:var(--phd);}
+  .lance-slot-cost{
+    font-size:9px;color:var(--dim);width:16px;text-align:right;flex-shrink:0;
+  }
+  .lance-desc{font-size:8px;color:var(--dim);letter-spacing:0.5px;margin-top:1px;line-height:1.5;}
+  .lance-status{
+    font-size:8px;letter-spacing:1px;min-height:12px;
+    padding:3px 0;border-top:1px solid var(--bdr);
+  }
+  .lance-status.ok  {color:var(--ph);}
+  .lance-status.bad {color:var(--red);}
+  .lance-status.wait{color:var(--dim);}
   .code-display{
     font-family:'Orbitron',sans-serif;font-size:28px;letter-spacing:8px;
     color:var(--amb);text-align:center;padding:8px;border:1px solid #332200;
@@ -474,17 +513,39 @@
       <div class="auth-err" id="join-err"></div>
     </div>
     <hr class="lobby-divider">
+    <div class="lobby-section">
+      <div class="lbl">MAP PRESET</div>
+      <div style="display:flex;flex-direction:column;gap:4px;" id="lobby-presets">
+        <!-- filled by JS -->
+      </div>
+    </div>
+    <hr class="lobby-divider">
     <button class="auth-btn sec" onclick="doSignOut()">SIGN OUT</button>
   </div>
 </div>
 
 <!-- ── WAITING ROOM SCREEN ────────────────────────────────────── -->
 <div class="screen-overlay hidden" id="scr-waiting">
-  <div class="wait-box">
+  <div class="wait-box" style="width:520px;max-height:90vh;overflow-y:auto;">
     <h2 id="wait-title">// WAITING FOR OPPONENT</h2>
     <div class="lbl">JOIN CODE  ·  CLICK TO COPY</div>
     <div class="code-display" id="code-display" onclick="copyCode()">——————</div>
     <div id="seat-rows" style="display:flex;flex-direction:column;gap:6px;"></div>
+
+    <!-- Lance builder -->
+    <div class="lance-builder" id="lance-builder">
+      <div class="lbl">// LANCE COMPOSITION</div>
+      <div class="lance-budget">
+        <span>BUDGET: <b id="lb-budget-used" class="pts ok">0</b> / <b style="color:var(--dim)">12 PTS</b></span>
+        <span style="font-size:8px;letter-spacing:1px;">CHOOSE 3 MECHS</span>
+      </div>
+      <div id="lb-slots">
+        <!-- filled by buildLanceBuilderUI() -->
+      </div>
+      <div class="lance-desc" id="lb-desc">Select a slot to see chassis details.</div>
+      <div class="lance-status wait" id="lb-status">Finalise your lance before the host starts.</div>
+    </div>
+
     <div class="wait-status" id="wait-status"></div>
     <button class="auth-btn" id="btn-start" onclick="doStartGame()" disabled>START GAME</button>
     <button class="auth-btn sec" onclick="leaveWaiting()">LEAVE LOBBY</button>
@@ -498,6 +559,7 @@
     <div class="victory-name" id="vict-headline">VICTORY</div>
     <div class="victory-sub" id="vict-sub">ALL ENEMY UNITS ELIMINATED</div>
     <div class="victory-stats" id="vict-stats"></div>
+    <button class="auth-btn" id="btn-download-log" style="margin-top:8px;width:100%;background:rgba(0,200,255,0.12);border-color:#0cf;" onclick="downloadBattleLog()">⬇ DOWNLOAD BATTLE LOG</button>
     <button class="auth-btn" style="margin-top:8px;width:100%;" onclick="doEndGame()">RETURN TO LOBBY</button>
   </div>
 </div>
@@ -542,6 +604,7 @@
       <button class="tb amb" id="b-rot"  onclick="setMode('rotate')">[ ROTATE ]</button>
       <button class="tb los" id="b-los"  onclick="setMode('los')">[ LOS ]</button>
       <button class="tb fire" id="b-fire" onclick="setMode('fire')">[ FIRE ]</button>
+      <button class="tb" id="b-terrain" onclick="setMode('terrain')" style="color:#88ddff;border-color:#1e3344;">[ TERRAIN ]</button>
       <button class="tb"     id="b-tg"   onclick="togFlag('tri')">[ TRI GRID ]</button>
       <button class="tb on"  id="b-out"  onclick="togFlag('out')">[ OUTLINE ]</button>
       <button class="tb on"  id="b-half" onclick="togFlag('half')">[ HALF TRIS ]</button>
@@ -553,6 +616,7 @@
   <div class="rpan">
     <div class="ptitle">// UNIT DATA</div>
     <div class="ib"><div class="lbl">SELECTED</div><div class="val" id="rN">—</div></div>
+    <div class="ib"><div class="lbl">PILOT</div><div class="coord" id="rPilot" style="font-size:9px;color:var(--dim);">—</div></div>
     <div class="ib"><div class="lbl">ANCHOR</div><div class="coord" id="rPos">—</div></div>
     <div class="ib"><div class="lbl">FACING</div><div class="fdisp" id="rF">—°</div></div>
     <div class="ib"><div class="lbl">COVERAGE</div><div class="coord" id="rC">full:— half:—</div></div>
@@ -582,7 +646,7 @@
 // ================================================================
 //  IRONFIELD  Phase 2 — Supabase multiplayer
 //
-//  Auth:     Supabase email/password (username@thedeck.game trick)
+//  Auth:     Supabase email/password (username@ironfield.game trick)
 //  Lobby:    Create game / join by code
 //  Waiting:  2-seat claim system, realtime sync
 //  WeGo:     Both players submit turn plans → simultaneous resolution
@@ -614,6 +678,23 @@ function showScreen(id) {
   ['scr-auth','scr-lobby','scr-waiting'].forEach(s => {
     const el = document.getElementById(s);
     if (el) el.classList.toggle('hidden', s !== id);
+  });
+  if (id === 'scr-lobby') buildLobbyPresets();
+}
+
+function buildLobbyPresets() {
+  const container = document.getElementById('lobby-presets');
+  if (!container) return;
+  container.innerHTML = '';
+  Object.entries(MAP_PRESETS).forEach(([key, preset]) => {
+    const btn = document.createElement('button');
+    btn.className = 'auth-btn';
+    btn.style.cssText = 'margin-top:2px;font-size:10px;padding:6px 10px;';
+    const isActive = key === activePreset;
+    if (isActive) { btn.style.borderColor = '#00ff88'; btn.style.color = '#00ff88'; }
+    btn.textContent = (isActive ? '▶ ' : '') + preset.label;
+    btn.onclick = () => { applyMapPreset(key); buildLobbyPresets(); };
+    container.appendChild(btn);
   });
 }
 function showAuthPanel(which) {
@@ -677,17 +758,12 @@ async function doLogin() {
   if (!user) { err.textContent = 'Enter your callsign.'; return; }
   if (!pass) { err.textContent = 'Enter your password.'; return; }
   btn.disabled = true; btn.textContent = 'SIGNING IN…';
-  // Try current domain first, fall back to legacy domain for older accounts
-  let { data, error } = await db.auth.signInWithPassword({
+  const { data, error } = await db.auth.signInWithPassword({
     email: `${user}@thedeck.game`, password: pass
   });
-  if (error) {
-    ({ data, error } = await db.auth.signInWithPassword({
-      email: `${user}@ironfield.game`, password: pass
-    }));
-  }
   btn.disabled = false; btn.textContent = 'SIGN IN';
   if (error) {
+    // Show the real error so we can diagnose — will clean up later
     err.textContent = error.message;
     console.error('Login error:', error);
     return;
@@ -786,8 +862,113 @@ function openWaiting() {
   document.getElementById('code-display').textContent = joinCode;
   document.getElementById('wait-title').textContent =
     isHost ? '// WAITING FOR OPPONENT' : '// JOINED — WAITING TO START';
+  buildLanceBuilderUI();
   renderWaiting();
   showScreen('scr-waiting');
+}
+
+function buildLanceBuilderUI() {
+  const container = document.getElementById('lb-slots');
+  if (!container) return;
+  container.innerHTML = '';
+
+  // My picks — if I'm P1 use lancePicksP1, else P2
+  const myPicks = myPlayer === 2 ? lancePicksP2 : lancePicksP1;
+
+  [0, 1, 2].forEach(i => {
+    const row = document.createElement('div');
+    row.className = 'lance-slot-row';
+
+    const lbl = document.createElement('span');
+    lbl.className = 'lance-slot-label';
+    lbl.textContent = String.fromCharCode(65 + i); // A, B, C
+
+    const sel = document.createElement('select');
+    sel.className = 'lance-slot-select';
+    sel.id = `lb-sel-${i}`;
+    Object.values(LANCE_CHASSIS).forEach(ch => {
+      const opt = document.createElement('option');
+      opt.value = ch.key;
+      opt.textContent = `${ch.label}  [${ch.cost} pts]`;
+      if (ch.key === myPicks[i]) opt.selected = true;
+      sel.appendChild(opt);
+    });
+
+    sel.addEventListener('change', () => onLanceSlotChange(i, sel.value));
+    sel.addEventListener('focus', () => updateLanceDesc(sel.value));
+    sel.addEventListener('change', () => updateLanceDesc(sel.value));
+
+    const costEl = document.createElement('span');
+    costEl.className = 'lance-slot-cost';
+    costEl.id = `lb-cost-${i}`;
+    costEl.textContent = LANCE_CHASSIS[myPicks[i]]?.cost ?? '?';
+
+    row.appendChild(lbl);
+    row.appendChild(sel);
+    row.appendChild(costEl);
+    container.appendChild(row);
+  });
+
+  updateLanceBudgetDisplay();
+  updateLanceDesc(myPicks[0]);
+}
+
+function onLanceSlotChange(slotIndex, chassisKey) {
+  const myPicks = myPlayer === 2 ? lancePicksP2 : lancePicksP1;
+  myPicks[slotIndex] = chassisKey;
+
+  // Update cost label
+  const costEl = document.getElementById(`lb-cost-${slotIndex}`);
+  if (costEl) costEl.textContent = LANCE_CHASSIS[chassisKey]?.cost ?? '?';
+
+  updateLanceBudgetDisplay();
+  saveLancePicks();
+}
+
+function updateLanceDesc(chassisKey) {
+  const ch = LANCE_CHASSIS[chassisKey];
+  const descEl = document.getElementById('lb-desc');
+  if (!descEl || !ch) return;
+  descEl.textContent = ch.desc;
+}
+
+function lanceCost(picks) {
+  return picks.reduce((s, k) => s + (LANCE_CHASSIS[k]?.cost ?? 0), 0);
+}
+
+function updateLanceBudgetDisplay() {
+  const myPicks = myPlayer === 2 ? lancePicksP2 : lancePicksP1;
+  const used    = lanceCost(myPicks);
+  const usedEl  = document.getElementById('lb-budget-used');
+  if (!usedEl) return;
+  usedEl.textContent = used;
+  usedEl.className   = used > LANCE_BUDGET ? 'pts over' : used === LANCE_BUDGET ? 'pts ok' : 'pts warn';
+
+  const statusEl = document.getElementById('lb-status');
+  if (!statusEl) return;
+  if (used > LANCE_BUDGET) {
+    statusEl.textContent = `OVER BUDGET by ${used - LANCE_BUDGET} pts — reduce your lance.`;
+    statusEl.className   = 'lance-status bad';
+  } else if (used === LANCE_BUDGET) {
+    statusEl.textContent = 'Lance locked in at full budget. ✓';
+    statusEl.className   = 'lance-status ok';
+  } else {
+    statusEl.textContent = `${LANCE_BUDGET - used} pts remaining — you can afford heavier chassis.`;
+    statusEl.className   = 'lance-status wait';
+  }
+}
+
+async function saveLancePicks() {
+  if (!gameId || !myPlayer) return;
+  // Read current state from DB, patch lance picks, write back.
+  // Uses the existing `state` JSONB column — no schema changes needed.
+  const { data: g } = await db.from('ironfield_games').select('state').eq('id', gameId).single();
+  const currentState = g?.state ?? { mechs: [], turn: 1 };
+  currentState.lancePicks = { p1: [...lancePicksP1], p2: [...lancePicksP2] };
+  const { error } = await db.from('ironfield_games')
+    .update({ state: currentState })
+    .eq('id', gameId);
+  if (error) console.warn('saveLancePicks error:', error.message);
 }
 
 async function renderWaiting() {
@@ -798,13 +979,26 @@ async function renderWaiting() {
   const p2name = g.p2_id ? await getUsername(g.p2_id) : null;
 
   const mine = currentUser.id;
+  const prevMyPlayer = myPlayer;
   const iAm1 = g.p1_id === mine, iAm2 = g.p2_id === mine;
   myPlayer = iAm1 ? 1 : iAm2 ? 2 : null;
 
   // Derive host status from DB — survives cache wipes and rejoins
   isHost = g.host_id === mine;
 
-  const makeRow = (slot, pid, name, color) => {
+  // Sync lance picks from DB state into local state
+  if (g.state?.lancePicks?.p1) lancePicksP1 = g.state.lancePicks.p1;
+  if (g.state?.lancePicks?.p2) lancePicksP2 = g.state.lancePicks.p2;
+
+  // Rebuild lance UI if we just claimed a seat (myPlayer changed)
+  if (myPlayer !== null && myPlayer !== prevMyPlayer) {
+    buildLanceBuilderUI();
+  } else if (myPlayer !== null) {
+    // Just refresh the budget display in case opponent changes pushed an update
+    updateLanceBudgetDisplay();
+  }
+
+  const makeRow = (slot, pid, name, color, picks) => {
     const isMe   = pid === mine;
     const isFree = !pid;
     let badge = isFree
@@ -817,16 +1011,31 @@ async function renderWaiting() {
       : isMe
         ? `<button class="seat-btn rel" onclick="releaseSeat()">RELEASE</button>`
         : '';
+    // Lance summary line
+    let lanceSummary = '';
+    if (pid && picks && picks.length === 3) {
+      const cost = lanceCost(picks);
+      const labels = picks.map(k => LANCE_CHASSIS[k]?.label ?? k).join(' · ');
+      const budgetOk = cost <= LANCE_BUDGET;
+      lanceSummary = `<div style="font-size:8px;color:${budgetOk?'var(--phd)':'var(--red)'};letter-spacing:0.5px;margin-top:3px;">
+        ${labels}  [${cost}/${LANCE_BUDGET} pts]${!budgetOk ? '  ⚠ OVER BUDGET' : ''}
+      </div>`;
+    } else if (pid) {
+      lanceSummary = `<div style="font-size:8px;color:var(--dim);margin-top:3px;">choosing lance…</div>`;
+    }
     return `<div class="seat-row ${isMe?'mine':pid?'taken':''}">
       <div class="seat-dot" style="background:${color}"></div>
-      <span class="seat-name">PLAYER ${slot}${name ? ' · '+name : ''}</span>
+      <div style="flex:1">
+        <div class="seat-name">PLAYER ${slot}${name ? ' · '+name : ''}</div>
+        ${lanceSummary}
+      </div>
       ${badge} ${btn}
     </div>`;
   };
 
   document.getElementById('seat-rows').innerHTML =
-    makeRow(1, g.p1_id, p1name, 'var(--ph)') +
-    makeRow(2, g.p2_id, p2name, 'var(--red)');
+    makeRow(1, g.p1_id, p1name, 'var(--ph)',  lancePicksP1) +
+    makeRow(2, g.p2_id, p2name, 'var(--red)', lancePicksP2);
 
   // Show/hide Start button based on isHost
   const btnStart = document.getElementById('btn-start');
@@ -835,12 +1044,17 @@ async function renderWaiting() {
     isHost ? '// WAITING FOR OPPONENT' : '// JOINED — WAITING TO START';
 
   const bothIn   = g.p1_id && g.p2_id;
-  const canStart = isHost && bothIn && myPlayer !== null;
+  const p1ok     = lanceCost(lancePicksP1) <= LANCE_BUDGET;
+  const p2ok     = lanceCost(lancePicksP2) <= LANCE_BUDGET;
+  const lanceOk  = p1ok && p2ok;
+  const canStart = isHost && bothIn && myPlayer !== null && lanceOk;
   btnStart.disabled = !canStart;
-  document.getElementById('wait-status').textContent = bothIn
-    ? (isHost ? 'Both pilots ready. You can start!' : 'Both pilots ready. Waiting for host…')
-    : 'Waiting for both seats to be claimed…';
-  document.getElementById('wait-status').className = 'wait-status' + (bothIn ? ' ok' : '');
+  let statusMsg = '';
+  if (!bothIn) statusMsg = 'Waiting for both seats to be claimed…';
+  else if (!lanceOk) statusMsg = 'One or more lances are over budget — fix before starting.';
+  else statusMsg = isHost ? 'Both pilots ready. You can start!' : 'Both pilots ready. Waiting for host…';
+  document.getElementById('wait-status').textContent = statusMsg;
+  document.getElementById('wait-status').className   = 'wait-status' + ((bothIn && lanceOk) ? ' ok' : '');
 }
 
 async function getUsername(uid) {
@@ -882,6 +1096,7 @@ async function claimSeat(slot) {
   }
   myPlayer = slot;
   showSynced();
+  buildLanceBuilderUI();
   renderWaiting();
 }
 
@@ -916,7 +1131,7 @@ function buildStartState() {
   const p1q = 3,  p1r0 = -Math.floor(p1q / 2) + 2;   // left side
   const p2q = 25, p2r0 = -Math.floor(p2q / 2) + 2;   // right side
 
-  const mkMech = (id, player, name, cls, facing, q, r) => {
+  const mkMech = (id, player, name, cls, facing, q, r, pilotName) => {
     const c = MECH_CLASSES[cls];
     return {
       id, player, name, cls, facing, mpSpent: 0,
@@ -924,25 +1139,47 @@ function buildStartState() {
       destroyed: false,
       armour:    { ...c.baseArmour    },
       structure: { ...c.baseStructure },
+      gunnery:   0,
+      piloting:  0,
+      pilotName: pilotName,
       ...spawnHex(q, r),
     };
   };
 
+  const slots = [0, 4, 8];  // row offsets for 3 mechs per side
+  const p1mechs = lancePicksP1.map((chassis, i) =>
+    mkMech(`p1${String.fromCharCode(97+i)}`, 1,
+           `LANCE-1${String.fromCharCode(65+i)}`,
+           chassis, 90, p1q, p1r0 + slots[i], PILOT_NAMES_P1[i] ?? `PILOT-1${i+1}`)
+  );
+  const p2mechs = lancePicksP2.map((chassis, i) =>
+    mkMech(`p2${String.fromCharCode(97+i)}`, 2,
+           `LANCE-2${String.fromCharCode(65+i)}`,
+           chassis, 270, p2q, p2r0 + slots[i], PILOT_NAMES_P2[i] ?? `PILOT-2${i+1}`)
+  );
   return {
     turn: 1,
-    mechs: [
-      mkMech('p1a', 1, 'LANCE-1A', 'scout',   90, p1q, p1r0  ),
-      mkMech('p1b', 1, 'LANCE-1B', 'medium',  90, p1q, p1r0+4),
-      mkMech('p1c', 1, 'LANCE-1C', 'heavy',   90, p1q, p1r0+8),
-      mkMech('p2a', 2, 'LANCE-2A', 'scout',  270, p2q, p2r0  ),
-      mkMech('p2b', 2, 'LANCE-2B', 'medium', 270, p2q, p2r0+4),
-      mkMech('p2c', 2, 'LANCE-2C', 'heavy',  270, p2q, p2r0+8),
-    ]
+    terrain: terrainTiles,
+    lancePicks: { p1: [...lancePicksP1], p2: [...lancePicksP2] },
+    mechs: [...p1mechs, ...p2mechs]
   };
 }
 
 async function doStartGame() {
   showSync('Starting…');
+  // Pull the latest lance picks from the game state before building
+  const { data: gPre } = await db.from('ironfield_games').select('state').eq('id', gameId).single();
+  if (gPre?.state?.lancePicks?.p1) lancePicksP1 = gPre.state.lancePicks.p1;
+  if (gPre?.state?.lancePicks?.p2) lancePicksP2 = gPre.state.lancePicks.p2;
+
+  // Validate budgets
+  const c1 = lanceCost(lancePicksP1), c2 = lanceCost(lancePicksP2);
+  if (c1 > LANCE_BUDGET || c2 > LANCE_BUDGET) {
+    showSyncErr();
+    addLog(`Cannot start — lance(s) over budget (P1:${c1} P2:${c2}, max ${LANCE_BUDGET})`, 'bad');
+    return;
+  }
+
   const startState = buildStartState();
   const { error } = await db.from('ironfield_games')
     .update({ status: 'active', phase: 'planning', state: startState })
@@ -1150,6 +1387,7 @@ async function recallPlan() {
 
 // ── WEGO RESOLUTION ───────────────────────────────────────────────
 let isResolving = false;  // guard against double-resolution from race conditions
+let battleLog   = [];     // accumulates all log entries for the current match (chronological)
 // Called by host only when both plans are in.
 async function resolveTurn(plans) {
   if (isResolving) return;
@@ -1305,8 +1543,9 @@ function resetPlanUI() {
 
 // ── GAME STATE SERIALISATION ──────────────────────────────────────
 function buildInitialState() {
-  // Returns a blank state — mech positions are set during deployment phase
-  return { mechs: [], turn: 1 };
+  // Returns a blank state — mech positions are set during deployment phase.
+  // Lance picks are stored here so both players can read/write them during the waiting room.
+  return { mechs: [], turn: 1, lancePicks: { p1: [...lancePicksP1], p2: [...lancePicksP2] } };
 }
 
 function captureState() {
@@ -1322,7 +1561,11 @@ function captureState() {
       legDestroyed:    m.legDestroyed    ?? false,
       heat:            m.heat            ?? 0,
       shutDown:        m.shutDown        ?? false,
+      gunnery:         m.gunnery         ?? 0,
+      piloting:        m.piloting        ?? 0,
+      pilotName:       m.pilotName       ?? '—',
     })),
+    terrain: terrainTiles,
     turn: turnNumber
   };
 }
@@ -1349,9 +1592,15 @@ function loadStateFromGame(state) {
       legDestroyed:    saved.legDestroyed    ?? false,
       heat:            saved.heat            ?? 0,
       shutDown:        saved.shutDown        ?? false,
+      gunnery:         saved.gunnery         ?? 0,
+      piloting:        saved.piloting        ?? 0,
+      pilotName:       saved.pilotName       ?? '—',
     };
   });
   if (state.turn) turnNumber = state.turn;
+  terrainTiles = state.terrain ?? {};
+  if (state.lancePicks?.p1) lancePicksP1 = state.lancePicks.p1;
+  if (state.lancePicks?.p2) lancePicksP2 = state.lancePicks.p2;
 }
 
 function loadStateFromDB(gameRow) {
@@ -1384,6 +1633,7 @@ function enterGame() {
     clampPan();
     syncScrollbars();
     enterPlanningPhase();
+    battleLog = []; // reset battle log for fresh match
     addLog(`Match started — you are Player ${myPlayer}`, 'ok');
   });
 }
@@ -1454,6 +1704,30 @@ function showVictory(winner, state) {
   overlay.classList.remove('hidden');
 }
 
+// ── BATTLE LOG EXPORT ─────────────────────────────────────────────
+function downloadBattleLog() {
+  const dateStr = new Date().toISOString().slice(0,10);
+  const header = [
+    '=================================================================',
+    '                   IRONFIELD -- BATTLE LOG',
+    '=================================================================',
+    '  Date    : ' + dateStr,
+    '  Player 1: ' + mechs.filter(m=>m.player===1).map(m=>m.name).join(', '),
+    '  Player 2: ' + mechs.filter(m=>m.player===2).map(m=>m.name).join(', '),
+    '  Turns   : ' + (turnNumber - 1),
+    '-----------------------------------------------------------------',
+    '',
+  ];
+  const text = [...header, ...battleLog].join('\n');
+  const blob = new Blob([text], { type: 'text/plain' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = 'ironfield-log-' + dateStr + '.txt';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ── STATE RESET ───────────────────────────────────────────────────
 function resetMultiState() {
   gameId = null; joinCode = null; myPlayer = null;
@@ -1462,6 +1736,8 @@ function resetMultiState() {
   realtimeChan = null;
   turnNumber = 1;
   startStateCache = null;
+  lancePicksP1 = ['scout', 'medium', 'heavy'];
+  lancePicksP2 = ['scout', 'medium', 'heavy'];
   ox = 0; oy = 0;  // force canvas re-centre on next enterGame
   // Reset mechs to default blank state — positions come from DB on next enterGame
   mechs = [
@@ -1512,8 +1788,9 @@ let gamePhase = 'planning'; // 'deployment' | 'planning'
 // fire orders queued this planning phase: [{ attacker_id, target_id, weapon }]
 let fireOrders = [];
 // weapon picker state
-let selectedWeapon = null;   // weaponKey string currently selected in the picker
-let hoveredEnemy   = null;   // mech being hovered in fire mode (for live TN preview)
+let selectedWeapon     = null;   // weaponKey string currently selected in the picker
+let hoveredEnemy       = null;   // mech being hovered in fire mode (for live TN preview)
+let selectedTerrainType = 'woods_light';  // terrain type currently selected in editor
 
 // ── HEX / TRI GEOMETRY ──────────────────────────────────────────
 function hCentre(q, r) {
@@ -1560,6 +1837,31 @@ function ptInTri(px, py, tri) {
   return !((d1<0||d2<0||d3<0)&&(d1>0||d2>0||d3>0));
 }
 function tKey(q, r, t) { return `${q},${r}:${t}`; }
+
+// Return the MP cost to enter the triangle at world coords (wx, wy).
+// Used by A* to price each edge crossing.
+function terrainMpCost(wx, wy) {
+  const { q, r, t } = w2tri(wx, wy);
+  const type = terrainTiles[tKey(q, r, t)];
+  if (!type) return 1;
+  const cost = TERRAIN_TYPES[type]?.mpCost ?? 1;
+  return cost === Infinity ? 999 : cost;
+}
+
+// Return the terrain losMod for a triangle key ('none' | 'partial' | 'block')
+function terrainLosMod(tk) {
+  const type = terrainTiles[tk];
+  if (!type) return 'none';
+  return TERRAIN_TYPES[type]?.losMod ?? 'none';
+}
+
+// Return coverTN bonus for a mech standing in its current triangle
+function terrainCoverTN(mech) {
+  const { q, r, t } = w2tri(mech.wx, mech.wy);
+  const type = terrainTiles[tKey(q, r, t)];
+  if (!type) return 0;
+  return TERRAIN_TYPES[type]?.coverTN ?? 0;
+}
 
 // ── TRIANGLE-GRID VERTICES ───────────────────────────────────────
 let allVerts = [];
@@ -1648,7 +1950,13 @@ function astar(startWx, startWy, goalWx, goalWy) {
     open.delete(cur);
     const gc = g.get(cur) ?? Infinity;
     (vertNeighbours.get(cur) || []).forEach(nb => {
-      const ng = gc + 1;   // uniform cost = 1 per vertex step
+      const nbV  = vertByKey.get(nb);
+      // Cost to enter nb = terrain cost at the midpoint between cur and nb
+      const curV = vertByKey.get(cur);
+      const midWx = (curV.wx + nbV.wx) / 2;
+      const midWy = (curV.wy + nbV.wy) / 2;
+      const edgeCost = terrainMpCost(midWx, midWy);
+      const ng = gc + edgeCost;
       if (ng < (g.get(nb) ?? Infinity)) {
         prev.set(nb, cur);
         g.set(nb, ng);
@@ -1737,10 +2045,120 @@ function getCoverage(mech) {
   return { full, half };
 }
 
+// ── PILOT NAMES ───────────────────────────────────────────────────
+// Default callsigns assigned at game start — purely flavour for now,
+// will matter more when campaign mode adds pilot progression.
+const PILOT_NAMES_P1 = ['ARCHER', 'VOSS', 'KIMURA'];
+const PILOT_NAMES_P2 = ['REYES',  'THORN', 'VALE' ];
+
+// ── TERRAIN ───────────────────────────────────────────────────────
+// mpCost:    movement points to enter this triangle (Infinity = impassable)
+// losMod:    'none' | 'partial' | 'block'  — how this terrain affects LOS
+// coverTN:   TN penalty added to shots at a mech standing IN this terrain
+// color:     canvas fill colour for this terrain type
+// label:     short display name
+const TERRAIN_TYPES = {
+  open:         { label:'OPEN',        mpCost:1,        losMod:'none',    coverTN:0, color:null },
+  woods_light:  { label:'LT WOODS',   mpCost:2,        losMod:'partial', coverTN:1, color:'rgba(34,100,34,0.38)' },
+  woods_heavy:  { label:'HVY WOODS',  mpCost:3,        losMod:'block',   coverTN:2, color:'rgba(10,60,10,0.60)' },
+  rubble:       { label:'RUBBLE',      mpCost:2,        losMod:'none',    coverTN:1, color:'rgba(110,90,60,0.42)' },
+  water:        { label:'WATER',       mpCost:2,        losMod:'none',    coverTN:0, color:'rgba(20,60,140,0.45)' },
+  river:        { label:'RIVER',       mpCost:Infinity, losMod:'none',    coverTN:0, color:'rgba(10,40,180,0.60)' },
+  building:     { label:'BUILDING',   mpCost:Infinity, losMod:'block',   coverTN:0, color:'rgba(80,80,100,0.65)' },
+  ruin:         { label:'RUIN',        mpCost:3,        losMod:'partial', coverTN:2, color:'rgba(80,70,50,0.55)' },
+};
+
+// Active terrain tile map: tKey → terrain type key.  Empty = all open.
+let terrainTiles = {};  // e.g. { '5,3:2': 'woods_light', ... }
+
+// ── MAP PRESETS ───────────────────────────────────────────────────
+// Each preset returns a fresh terrainTiles object.
+// Coordinates use hex (q,r) — we convert all 6 triangles of a hex at once.
+function hexTiles(q, r, type) {
+  const out = {};
+  for (let t = 0; t < 6; t++) out[tKey(q, r, t)] = type;
+  return out;
+}
+function hexRangeTiles(q0, r0, q1, r1, type) {
+  const out = {};
+  for (let q = q0; q <= q1; q++)
+    for (let r = r0; r <= r1; r++)
+      Object.assign(out, hexTiles(q, r, type));
+  return out;
+}
+
+const MAP_PRESETS = {
+  open: {
+    label: 'OPEN PLAINS',
+    build: () => ({})
+  },
+  river: {
+    label: 'RIVER CROSSING',
+    build: () => {
+      const t = {};
+      // River runs vertically through column 14
+      for (let ri = 0; ri < ROWS; ri++) {
+        const r = ri - Math.floor(14 / 2);
+        Object.assign(t, hexTiles(14, r, 'river'));
+      }
+      // Ford / crossing at mid-map (cols 13-15, rows 0-2)
+      for (let ri = 8; ri <= 12; ri++) {
+        const r = ri - Math.floor(14 / 2);
+        Object.assign(t, hexTiles(14, r, 'water'));
+      }
+      // Light woods on P1 side
+      [[5,0],[5,1],[6,0],[6,2],[7,1]].forEach(([q,r]) => Object.assign(t, hexTiles(q,r,'woods_light')));
+      // Rubble on P2 side
+      [[21,0],[21,1],[22,0],[22,-1]].forEach(([q,r]) => Object.assign(t, hexTiles(q,r,'rubble')));
+      return t;
+    }
+  },
+  urban: {
+    label: 'URBAN COMBAT',
+    build: () => {
+      const t = {};
+      // Block of buildings centre-map
+      const blocks = [
+        [12,0],[12,1],[13,0],[13,-1],
+        [15,1],[15,2],[16,1],[16,0],
+        [13,3],[14,3],[14,2],
+        [11,-1],[11,0],[12,-2],
+      ];
+      blocks.forEach(([q,r]) => Object.assign(t, hexTiles(q,r,'building')));
+      // Ruins around the edges
+      const ruins = [[10,1],[10,0],[17,2],[17,1],[14,-1],[15,-1]];
+      ruins.forEach(([q,r]) => Object.assign(t, hexTiles(q,r,'ruin')));
+      // Rubble scatter
+      [[9,2],[9,1],[18,2],[18,1]].forEach(([q,r]) => Object.assign(t, hexTiles(q,r,'rubble')));
+      return t;
+    }
+  },
+  wooded: {
+    label: 'WOODED HILLS',
+    build: () => {
+      const t = {};
+      // Heavy woods clumps
+      const hvy = [[7,0],[7,1],[8,0],[8,1],[8,2],[20,0],[20,1],[21,0],[21,1]];
+      hvy.forEach(([q,r]) => Object.assign(t, hexTiles(q,r,'woods_heavy')));
+      // Light woods surround
+      const lt = [[6,0],[6,1],[6,2],[9,0],[9,1],[9,2],[9,3],
+                  [19,0],[19,1],[19,2],[22,0],[22,1],
+                  [12,2],[12,3],[13,2],[13,3],[14,2],[15,2],[16,2]];
+      lt.forEach(([q,r]) => Object.assign(t, hexTiles(q,r,'woods_light')));
+      // Rubble ridge through centre
+      [[13,0],[14,0],[14,1],[15,0],[15,1],[16,0]].forEach(([q,r]) => Object.assign(t, hexTiles(q,r,'rubble')));
+      return t;
+    }
+  },
+};
+
+let activePreset = 'open';  // tracks which preset is loaded (for UI highlight)
+
 // ── MECH CLASSES ─────────────────────────────────────────────────
-// mpMax  = movement points available per turn
-// mpSpent = MP used this turn (resets on new turn)
-// class   = label for display
+// mpMax     = movement points available per turn
+// heatCap   = heat units before penalties kick in
+// gunnery   = pilot skill: subtracted from all fire TNs (lower = better)
+// piloting  = pilot skill: reduces movement penalty thresholds (lower = better)
 const MECH_CLASSES = {
   scout: {
     label:'SCOUT', mpMax:18, heatCap:18, color:'#55ffbb',
@@ -1761,6 +2179,36 @@ const MECH_CLASSES = {
     baseStructure: { head:1, ct:8,  lt:6,  rt:6,  la:5,  ra:5,  ll:7,  rl:7  },
   },
 };
+
+// ── LANCE CHASSIS ROSTER ─────────────────────────────────────────
+// Available chassis for lance composition (Tier 3.3).
+// cost: build points (budget per player = 12)
+// cls:  references a MECH_CLASSES key for all stats/weapons
+// lbl2: one-line description shown in picker
+const LANCE_CHASSIS = {
+  scout: {
+    key:'scout', label:'LANCE-S', fullLabel:'LANCE-S  /  SCOUT',
+    cost:3, cls:'scout',
+    desc:'Fast skirmisher — LT LASER + SRM-2  ·  18 MP',
+  },
+  medium: {
+    key:'medium', label:'LANCE-M', fullLabel:'LANCE-M  /  MEDIUM',
+    cost:5, cls:'medium',
+    desc:'All-rounder — MD LASER + AC/5  ·  12 MP',
+  },
+  heavy: {
+    key:'heavy', label:'LANCE-H', fullLabel:'LANCE-H  /  HEAVY',
+    cost:8, cls:'heavy',
+    desc:'Fire platform — LG LASER + AC/10 + LRM-5  ·  6 MP',
+  },
+};
+const LANCE_BUDGET = 12;     // point budget per player
+const LANCE_SIZE   = 3;      // mechs per lance
+
+// Per-player lance picks — arrays of chassis keys e.g. ['scout','scout','medium']
+// Set during the waiting room; used by buildStartState().
+let lancePicksP1 = ['scout', 'medium', 'heavy'];
+let lancePicksP2 = ['scout', 'medium', 'heavy'];
 
 // ── WEAPONS ───────────────────────────────────────────────────────
 // type:       'laser' | 'ballistic' | 'missile'
@@ -1900,9 +2348,12 @@ function calcToHit(attacker, target, weapon) {
   if (dist > weapon.range * 0.6) tn += 2;  // long range
   if (dist <= 3)                 tn -= 1;  // point blank
 
-  // Attacker movement — sprinting makes aiming harder
-  if (attacker.mpSpent > 0)                                      tn += 1;
-  if (attacker.mpSpent >= Math.ceil(mechMpMax(attacker) * 0.5)) tn += 1;
+  // Attacker movement — sprinting makes aiming harder.
+  // Piloting skill raises the threshold at which the penalty kicks in.
+  const piloting  = attacker.piloting ?? 0;
+  const sprintThresh = Math.ceil(mechMpMax(attacker) * (0.5 + piloting * 0.1));
+  if (attacker.mpSpent > 0)                          tn += 1;
+  if (attacker.mpSpent >= sprintThresh)              tn += 1;
 
   // Target movement last turn — ballistics are most sensitive to this
   const tgtMoved = target.mpSpentLastTurn ?? 0;
@@ -1915,6 +2366,31 @@ function calcToHit(attacker, target, weapon) {
 
   // Heat penalty — overheating degrades accuracy
   tn += heatTnPenalty(attacker);
+
+  // Gunnery skill — direct TN reduction (lower gunnery = better)
+  tn -= (attacker.gunnery ?? 0);
+
+  // Terrain LOS — walk ray from attacker to target
+  {
+    const STEPS = 80;
+    const seen = new Set();
+    let blocked = false, partialCount = 0;
+    for (let i = 1; i < STEPS; i++) {   // skip i=0 (attacker tile) and i=STEPS (target tile)
+      const f  = i / STEPS;
+      const wx = attacker.wx + (target.wx - attacker.wx) * f;
+      const wy = attacker.wy + (target.wy - attacker.wy) * f;
+      const { q, r, t } = w2tri(wx, wy);
+      const k = tKey(q, r, t); if (seen.has(k)) continue; seen.add(k);
+      const mod = terrainLosMod(k);
+      if (mod === 'block') { blocked = true; break; }
+      if (mod === 'partial') partialCount++;
+    }
+    if (blocked) return null;           // no shot — LOS fully blocked
+    tn += partialCount;                 // each partial-LOS tile adds +1 TN
+  }
+
+  // Terrain cover — target in woods/rubble/ruin is harder to hit
+  tn += terrainCoverTN(target);
 
   return Math.max(3, Math.min(18, tn));
 }
@@ -2207,6 +2683,23 @@ function drawHexLayer() {
       const { x: cx, y: cy } = w2c(x, y);
       const v  = hVerts(cx, cy);
       const hov = mHex && mHex.q === q && mHex.r === r;
+
+      // ── Draw terrain fills at triangle resolution ───────────────
+      hTris(cx, cy).forEach((tri, t) => {
+        const k    = tKey(q, r, t);
+        const type = terrainTiles[k];
+        const col  = type ? TERRAIN_TYPES[type]?.color : null;
+        if (col) {
+          ctx.beginPath();
+          ctx.moveTo(tri[0].x, tri[0].y);
+          ctx.lineTo(tri[1].x, tri[1].y);
+          ctx.lineTo(tri[2].x, tri[2].y);
+          ctx.closePath();
+          ctx.fillStyle = col; ctx.fill();
+        }
+      });
+
+      // ── Hex grid overlay ─────────────────────────────────────────
       ctx.beginPath();
       v.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
       ctx.closePath();
@@ -2240,9 +2733,17 @@ function drawTriGrid() {
         ctx.strokeStyle = hov ? 'rgba(0,255,136,0.38)' : 'rgba(0,255,136,0.07)';
         ctx.lineWidth = 0.5; ctx.stroke();
         const c = tCent(tri);
-        ctx.fillStyle = 'rgba(0,255,136,0.12)';
-        ctx.font = '5px Share Tech Mono'; ctx.textAlign = 'center';
-        ctx.fillText(t, c.x, c.y + 2);
+        // Show terrain type label in editor mode
+        const type = terrainTiles[k];
+        if (mode === 'terrain' && type && type !== 'open') {
+          ctx.fillStyle = 'rgba(255,255,255,0.55)';
+          ctx.font = '4px Share Tech Mono'; ctx.textAlign = 'center';
+          ctx.fillText(TERRAIN_TYPES[type]?.label ?? type, c.x, c.y + 2);
+        } else {
+          ctx.fillStyle = 'rgba(0,255,136,0.12)';
+          ctx.font = '5px Share Tech Mono'; ctx.textAlign = 'center';
+          ctx.fillText(t, c.x, c.y + 2);
+        }
       });
     }
   }
@@ -2530,27 +3031,52 @@ function drawLOS() {
   const { x: sx, y: sy } = w2c(src.wx, src.wy);
   const { x: tx, y: ty } = w2c(losPt.x, losPt.y);
   const STEPS = 120, seen = new Set();
+
+  // Walk the ray, accumulate terrain LOS mods
+  let blocked = false, partialCount = 0;
+  const triList = []; // { q,r,t,k,mod }
+
   for (let i = 0; i <= STEPS; i++) {
     const f  = i / STEPS;
     const wx = src.wx + (losPt.x - src.wx) * f;
     const wy = src.wy + (losPt.y - src.wy) * f;
     const { q, r, t } = w2tri(wx, wy);
     const k = tKey(q, r, t); if (seen.has(k)) continue; seen.add(k);
+    const mod = terrainLosMod(k);
+    if (mod === 'block') blocked = true;
+    if (mod === 'partial') partialCount++;
+    triList.push({ q, r, t, k, mod });
+  }
+
+  // Colour each triangle by its own terrain mod
+  triList.forEach(({ q, r, t, mod }) => {
     const { x: hx, y: hy } = hCentre(q, r);
     const { x: cx2, y: cy2 } = w2c(hx, hy);
     const tri = hTris(cx2, cy2)[t];
+    let fill;
+    if (mod === 'block')   fill = 'rgba(255,60,60,0.22)';
+    else if (mod === 'partial') fill = 'rgba(255,200,0,0.18)';
+    else                    fill = 'rgba(136,170,255,0.10)';
     ctx.beginPath();
     ctx.moveTo(tri[0].x,tri[0].y); ctx.lineTo(tri[1].x,tri[1].y);
     ctx.lineTo(tri[2].x,tri[2].y); ctx.closePath();
-    ctx.fillStyle = 'rgba(136,170,255,0.11)'; ctx.fill();
-  }
+    ctx.fillStyle = fill; ctx.fill();
+  });
+
+  // Ray line — colour by LOS result
+  const lineColor = blocked ? 'rgba(255,80,80,0.85)'
+                 : partialCount > 0 ? 'rgba(255,200,0,0.85)'
+                 : 'rgba(136,170,255,0.72)';
   ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(tx, ty);
-  ctx.strokeStyle = 'rgba(136,170,255,0.72)'; ctx.lineWidth = 1.5;
+  ctx.strokeStyle = lineColor; ctx.lineWidth = 1.5;
   ctx.setLineDash([5, 3]); ctx.stroke(); ctx.setLineDash([]);
-  const dist = (Math.hypot(losPt.x-src.wx, losPt.y-src.wy) / (HS * S3 / 2)).toFixed(1);
+
+  // Label: distance + LOS status
+  const dist    = (Math.hypot(losPt.x-src.wx, losPt.y-src.wy) / (HS * S3 / 2)).toFixed(1);
+  const losStr  = blocked ? 'BLOCKED' : partialCount > 0 ? `+${partialCount} TN` : 'CLEAR';
   ctx.font = '10px Share Tech Mono'; ctx.textAlign = 'center';
-  ctx.fillStyle = '#88aaff';
-  ctx.fillText(`${dist} tri`, (sx+tx)/2, (sy+ty)/2 - 9);
+  ctx.fillStyle = lineColor;
+  ctx.fillText(`${dist} hex  ·  ${losStr}`, (sx+tx)/2, (sy+ty)/2 - 9);
 }
 
 // ── FACING WHEEL ─────────────────────────────────────────────────
@@ -2606,20 +3132,23 @@ function togFlag(k) {
 function setMode(m) {
   mode = m;
   document.querySelectorAll('.tb[id^="b-"]').forEach(b => b.classList.remove('on'));
-  const bmap = { select:'sel', move:'move', rotate:'rot', los:'los', fire:'fire' };
-  document.getElementById(`b-${bmap[m]||m}`).classList.add('on');
+  const bmap = { select:'sel', move:'move', rotate:'rot', los:'los', fire:'fire', terrain:'terrain' };
+  const btn = document.getElementById(`b-${bmap[m]||m}`);
+  if (btn) btn.classList.add('on');
   document.getElementById('hmode').textContent = m.toUpperCase();
   if (m === 'los') { losId = selId; }
   if (m !== 'fire') { selectedWeapon = null; hoveredEnemy = null; }
   const hints = {
-    select: 'Click a unit to select it',
-    move:   'Click any vertex (amber dot) to move',
-    rotate: 'Click to set facing direction',
-    los:    'Hover to preview line of sight',
-    fire:   'Select your mech, pick a weapon, then click an enemy'
+    select:  'Click a unit to select it',
+    move:    'Click any vertex (amber dot) to move',
+    rotate:  'Click to set facing direction',
+    los:     'Hover to preview line of sight',
+    fire:    'Select your mech, pick a weapon, then click an enemy',
+    terrain: 'Click triangle to paint — pick type in right panel'
   };
   document.getElementById('mhint').textContent = hints[m] || '';
   updateWeaponPicker(null);
+  updateTerrainPanel();
   hovVert = null; draw();
 }
 function selMech(id) {
@@ -2642,6 +3171,8 @@ function updatePanel() {
     document.getElementById('mpNums').textContent = '—';
     document.getElementById('mpFill').style.width = '0%';
     document.getElementById('mpFill').className = 'mpbar-fill ok';
+    const pilotEl = document.getElementById('rPilot');
+    if (pilotEl) pilotEl.textContent = '—';
     drawWheel(); return;
   }
   const { full, half } = getCoverage(m);
@@ -2660,6 +3191,13 @@ function updatePanel() {
   document.getElementById('mpNums').className  = `mpbar-nums ${cls}`;
   document.getElementById('mpFill').style.width = `${pct}%`;
   document.getElementById('mpFill').className   = `mpbar-fill ${cls}`;
+  // Pilot line
+  const pilotEl = document.getElementById('rPilot');
+  if (pilotEl) {
+    const g = m.gunnery ?? 0, p = m.piloting ?? 0;
+    pilotEl.textContent = `${m.pilotName ?? '—'}  ·  G:${g} P:${p}`;
+    pilotEl.style.color = (g > 0 || p > 0) ? 'var(--ph)' : 'var(--dim)';
+  }
   drawWheel();
 }
 // ── WEAPON PICKER ────────────────────────────────────────────────
@@ -2767,6 +3305,72 @@ function clearFireOrder() {
   buildRoster(); draw();
 }
 
+// ── TERRAIN EDITOR ────────────────────────────────────────────────
+function updateTerrainPanel() {
+  const panel = document.getElementById('wpanel');
+  if (!panel) return;
+  if (mode !== 'terrain') {
+    // hide terrain section if visible
+    const ts = document.getElementById('terrain-section');
+    if (ts) ts.style.display = 'none';
+    return;
+  }
+  let ts = document.getElementById('terrain-section');
+  if (!ts) {
+    ts = document.createElement('div');
+    ts.id = 'terrain-section';
+    panel.appendChild(ts);
+  }
+  ts.style.display = '';
+  ts.innerHTML = `
+    <div class="ptitle" style="margin-top:8px;">// TERRAIN EDITOR</div>
+    <div style="font-size:9px;color:var(--dim);margin-bottom:4px;">Click or drag to paint tiles</div>
+    <div id="terrain-btns" style="display:flex;flex-direction:column;gap:3px;"></div>
+    <div style="margin-top:8px;font-size:9px;color:var(--dim);">MAP PRESETS</div>
+    <div id="preset-btns" style="display:flex;flex-direction:column;gap:3px;margin-top:3px;"></div>
+    <button class="wbtn" style="margin-top:6px;font-size:9px;color:#ff4444;border-color:#ff4444;opacity:0.7;"
+      onclick="if(confirm('Clear all terrain?')){terrainTiles={};draw();}">CLEAR ALL TERRAIN</button>
+  `;
+
+  // Terrain type buttons
+  const tBtns = ts.querySelector('#terrain-btns');
+  Object.entries(TERRAIN_TYPES).forEach(([key, def]) => {
+    const btn = document.createElement('button');
+    btn.className = 'wbtn';
+    const sel = key === selectedTerrainType;
+    const swatch = def.color
+      ? `<span style="display:inline-block;width:10px;height:10px;background:${def.color};border:1px solid rgba(255,255,255,0.2);vertical-align:middle;margin-right:4px;"></span>`
+      : `<span style="display:inline-block;width:10px;height:10px;border:1px solid rgba(255,255,255,0.2);vertical-align:middle;margin-right:4px;"></span>`;
+    btn.innerHTML = `${swatch}${def.label}`;
+    if (sel) { btn.style.borderColor = '#00ff88'; btn.style.color = '#00ff88'; }
+    const mpStr = def.mpCost === Infinity ? '∞ MP' : `${def.mpCost} MP`;
+    btn.title = `${def.label} · ${mpStr} · LOS: ${def.losMod} · Cover: +${def.coverTN}TN`;
+    btn.onclick = () => { selectedTerrainType = key; updateTerrainPanel(); };
+    tBtns.appendChild(btn);
+  });
+
+  // Preset buttons
+  const pBtns = ts.querySelector('#preset-btns');
+  Object.entries(MAP_PRESETS).forEach(([key, preset]) => {
+    const btn = document.createElement('button');
+    btn.className = 'wbtn';
+    const active = key === activePreset;
+    if (active) { btn.style.borderColor = '#ffaa00'; btn.style.color = '#ffaa00'; }
+    btn.textContent = preset.label;
+    btn.onclick = () => applyMapPreset(key);
+    pBtns.appendChild(btn);
+  });
+}
+
+function applyMapPreset(key) {
+  const preset = MAP_PRESETS[key];
+  if (!preset) return;
+  terrainTiles = preset.build();
+  activePreset = key;
+  addLog(`Map preset loaded: ${preset.label}`, 'ok');
+  updateTerrainPanel();
+  draw();
+}
 
 function buildRoster() {
   const list = document.getElementById('mlist');
@@ -2856,7 +3460,17 @@ function buildRoster() {
          </div>`
       : '';
 
+    // Pilot skills display
+    const gStr = mech.gunnery ?? 0;
+    const pStr = mech.piloting ?? 0;
+    const skillColor = (gStr > 0 || pStr > 0) ? 'var(--ph)' : 'var(--dim)';
+    const pilotHtml = `<div class="sr" style="margin-bottom:2px;border-bottom:1px solid var(--bdr);padding-bottom:4px;">
+      <span style="color:${skillColor};letter-spacing:1px;font-size:8px;">${mech.pilotName ?? '—'}</span>
+      <span style="color:${skillColor};font-size:8px;">GUN:${gStr}  PIL:${pStr}</span>
+    </div>`;
+
     const inner = `<div class="mn">${mech.name}</div>
+      ${pilotHtml}
       <div class="ms">
         <div class="sr"><span>CLASS</span><span class="v">${cls?.label ?? mech.cls}</span></div>
         <div class="sr"><span>FACING</span><span class="v">${mech.facing}°</span></div>
@@ -2880,6 +3494,9 @@ function addLog(msg, cls='') {
   el.innerHTML = `<span class="ts">${t}</span>${msg}`;
   a.insertBefore(el, a.firstChild);
   while (a.children.length > 60) a.removeChild(a.lastChild);
+  // Accumulate for battle log export (strip HTML tags for plain text)
+  const plain = msg.replace(/<[^>]*>/g, '');
+  battleLog.push(`[${t}] ${plain}`);
 }
 
 // ── INPUT ────────────────────────────────────────────────────────
@@ -2919,6 +3536,14 @@ canvas.addEventListener('mousemove', e => {
     }
   }
 
+  // Terrain mode: paint while dragging (left button held)
+  if (mode === 'terrain' && e.buttons === 1) {
+    const { q, r, t } = w2tri(wx, wy);
+    const k = tKey(q, r, t);
+    if (selectedTerrainType === 'open') delete terrainTiles[k];
+    else terrainTiles[k] = selectedTerrainType;
+  }
+
   const pathCost = (mode === 'move' && currentPath) ? currentPath.length - 1 : null;
   const costStr  = pathCost !== null ? `  COST:${pathCost}` : '';
   document.getElementById('rCur').textContent = `hex(${tri.q},${tri.r}) t[${tri.t}]${costStr}`;
@@ -2947,6 +3572,17 @@ canvas.addEventListener('click', e => {
   }, null);
   const near = nm && nm.d < OUTLINE_R * 0.55 ? nm.m : null;
 
+  if (mode === 'terrain') {
+    const { q, r, t } = w2tri(wx, wy);
+    const k = tKey(q, r, t);
+    if (selectedTerrainType === 'open') {
+      delete terrainTiles[k];
+    } else {
+      terrainTiles[k] = selectedTerrainType;
+    }
+    draw();
+    return;
+  }
   if (mode === 'select') {
     if (near) selMech(near.id);
     else { selId = null; updatePanel(); buildRoster(); draw(); }
