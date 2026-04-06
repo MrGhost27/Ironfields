@@ -960,11 +960,12 @@ function updateLanceBudgetDisplay() {
 
 async function saveLancePicks() {
   if (!gameId || !myPlayer) return;
-  // Read current state from DB, patch lance picks, write back.
-  // Uses the existing `state` JSONB column — no schema changes needed.
+  // Read current state from DB, patch lance picks + terrain/elevation, write back.
   const { data: g } = await db.from('ironfield_games').select('state').eq('id', gameId).single();
   const currentState = g?.state ?? { mechs: [], turn: 1 };
   currentState.lancePicks = { p1: [...lancePicksP1], p2: [...lancePicksP2] };
+  currentState.terrain    = terrainTiles;
+  currentState.elevation  = elevationTiles;
   const { error } = await db.from('ironfield_games')
     .update({ state: currentState })
     .eq('id', gameId);
@@ -1544,8 +1545,10 @@ function resetPlanUI() {
 // ── GAME STATE SERIALISATION ──────────────────────────────────────
 function buildInitialState() {
   // Returns a blank state — mech positions are set during deployment phase.
-  // Lance picks are stored here so both players can read/write them during the waiting room.
-  return { mechs: [], turn: 1, lancePicks: { p1: [...lancePicksP1], p2: [...lancePicksP2] } };
+  // Lance picks and terrain/elevation are stored here so both players sync during the waiting room.
+  return { mechs: [], turn: 1,
+           terrain: terrainTiles, elevation: elevationTiles,
+           lancePicks: { p1: [...lancePicksP1], p2: [...lancePicksP2] } };
 }
 
 function captureState() {
@@ -1566,6 +1569,7 @@ function captureState() {
       pilotName:       m.pilotName       ?? '—',
     })),
     terrain: terrainTiles,
+    elevation: elevationTiles,
     turn: turnNumber
   };
 }
@@ -1598,7 +1602,8 @@ function loadStateFromGame(state) {
     };
   });
   if (state.turn) turnNumber = state.turn;
-  terrainTiles = state.terrain ?? {};
+  terrainTiles   = state.terrain   ?? {};
+  elevationTiles = state.elevation ?? {};
   if (state.lancePicks?.p1) lancePicksP1 = state.lancePicks.p1;
   if (state.lancePicks?.p2) lancePicksP2 = state.lancePicks.p2;
 }
@@ -1738,6 +1743,8 @@ function resetMultiState() {
   startStateCache = null;
   lancePicksP1 = ['scout', 'medium', 'heavy'];
   lancePicksP2 = ['scout', 'medium', 'heavy'];
+  terrainTiles   = {};
+  elevationTiles = {};
   ox = 0; oy = 0;  // force canvas re-centre on next enterGame
   // Reset mechs to default blank state — positions come from DB on next enterGame
   mechs = [
@@ -1791,6 +1798,8 @@ let fireOrders = [];
 let selectedWeapon     = null;   // weaponKey string currently selected in the picker
 let hoveredEnemy       = null;   // mech being hovered in fire mode (for live TN preview)
 let selectedTerrainType = 'woods_light';  // terrain type currently selected in editor
+let selectedElevationMode = false;        // true = painting elevation, false = painting terrain type
+let selectedElevationLevel = 1;          // 0=LOW 1=MID 2=HIGH — level to paint
 
 // ── HEX / TRI GEOMETRY ──────────────────────────────────────────
 function hCentre(q, r) {
@@ -1862,6 +1871,24 @@ function terrainCoverTN(mech) {
   if (!type) return 0;
   return TERRAIN_TYPES[type]?.coverTN ?? 0;
 }
+
+// Return elevation level (0=LOW, 1=MID, 2=HIGH) for a world position or tKey
+function elevationAt(wx, wy) {
+  const { q, r, t } = w2tri(wx, wy);
+  return elevationTiles[tKey(q, r, t)] ?? 0;
+}
+function elevationAtKey(tk) {
+  return elevationTiles[tk] ?? 0;
+}
+
+// Elevation labels for display
+const ELEVATION_LABELS = ['LOW', 'MID', 'HIGH'];
+// Elevation tint overlays — additive brightness layers drawn over terrain
+const ELEVATION_TINTS = [
+  null,                              // 0 = LOW — no overlay
+  'rgba(255,255,200,0.10)',          // 1 = MID — faint warm highlight
+  'rgba(255,255,200,0.22)',          // 2 = HIGH — stronger warm highlight
+];
 
 // ── TRIANGLE-GRID VERTICES ───────────────────────────────────────
 let allVerts = [];
@@ -2071,6 +2098,9 @@ const TERRAIN_TYPES = {
 // Active terrain tile map: tKey → terrain type key.  Empty = all open.
 let terrainTiles = {};  // e.g. { '5,3:2': 'woods_light', ... }
 
+// Active elevation tile map: tKey → 0 (LOW) | 1 (MID) | 2 (HIGH).  Empty = all LOW (0).
+let elevationTiles = {};  // e.g. { '5,3:2': 2, ... }
+
 // ── MAP PRESETS ───────────────────────────────────────────────────
 // Each preset returns a fresh terrainTiles object.
 // Coordinates use hex (q,r) — we convert all 6 triangles of a hex at once.
@@ -2090,18 +2120,18 @@ function hexRangeTiles(q0, r0, q1, r1, type) {
 const MAP_PRESETS = {
   open: {
     label: 'OPEN PLAINS',
-    build: () => ({})
+    build: () => ({ terrain: {}, elevation: {} })
   },
   river: {
     label: 'RIVER CROSSING',
     build: () => {
-      const t = {};
+      const t = {}, e = {};
       // River runs vertically through column 14
       for (let ri = 0; ri < ROWS; ri++) {
         const r = ri - Math.floor(14 / 2);
         Object.assign(t, hexTiles(14, r, 'river'));
       }
-      // Ford / crossing at mid-map (cols 13-15, rows 0-2)
+      // Ford / crossing at mid-map
       for (let ri = 8; ri <= 12; ri++) {
         const r = ri - Math.floor(14 / 2);
         Object.assign(t, hexTiles(14, r, 'water'));
@@ -2110,7 +2140,18 @@ const MAP_PRESETS = {
       [[5,0],[5,1],[6,0],[6,2],[7,1]].forEach(([q,r]) => Object.assign(t, hexTiles(q,r,'woods_light')));
       // Rubble on P2 side
       [[21,0],[21,1],[22,0],[22,-1]].forEach(([q,r]) => Object.assign(t, hexTiles(q,r,'rubble')));
-      return t;
+      // Elevated riverbanks — HIGH on both sides of the river
+      [[12,0],[12,1],[13,0],[13,1],[13,-1]].forEach(([q,r]) => {
+        for (let tt = 0; tt < 6; tt++) e[tKey(q,r,tt)] = 2;
+      });
+      [[15,0],[15,1],[16,0],[16,1],[15,2]].forEach(([q,r]) => {
+        for (let tt = 0; tt < 6; tt++) e[tKey(q,r,tt)] = 2;
+      });
+      // MID ground approaching banks
+      [[11,0],[11,1],[17,0],[17,1]].forEach(([q,r]) => {
+        for (let tt = 0; tt < 6; tt++) e[tKey(q,r,tt)] = 1;
+      });
+      return { terrain: t, elevation: e };
     }
   },
   urban: {
@@ -2130,13 +2171,13 @@ const MAP_PRESETS = {
       ruins.forEach(([q,r]) => Object.assign(t, hexTiles(q,r,'ruin')));
       // Rubble scatter
       [[9,2],[9,1],[18,2],[18,1]].forEach(([q,r]) => Object.assign(t, hexTiles(q,r,'rubble')));
-      return t;
+      return { terrain: t, elevation: {} };
     }
   },
   wooded: {
     label: 'WOODED HILLS',
     build: () => {
-      const t = {};
+      const t = {}, e = {};
       // Heavy woods clumps
       const hvy = [[7,0],[7,1],[8,0],[8,1],[8,2],[20,0],[20,1],[21,0],[21,1]];
       hvy.forEach(([q,r]) => Object.assign(t, hexTiles(q,r,'woods_heavy')));
@@ -2147,7 +2188,17 @@ const MAP_PRESETS = {
       lt.forEach(([q,r]) => Object.assign(t, hexTiles(q,r,'woods_light')));
       // Rubble ridge through centre
       [[13,0],[14,0],[14,1],[15,0],[15,1],[16,0]].forEach(([q,r]) => Object.assign(t, hexTiles(q,r,'rubble')));
-      return t;
+      // Elevation: HIGH hilltops where heavy woods are
+      hvy.forEach(([q,r]) => { for (let tt = 0; tt < 6; tt++) e[tKey(q,r,tt)] = 2; });
+      // MID slopes — light woods surrounding the hilltops
+      [[6,0],[6,1],[9,0],[9,1],[9,2],[19,0],[19,1],[22,0],[22,1]].forEach(([q,r]) => {
+        for (let tt = 0; tt < 6; tt++) e[tKey(q,r,tt)] = 1;
+      });
+      // MID ridge at centre
+      [[13,0],[14,0],[14,1],[15,0],[15,1],[16,0]].forEach(([q,r]) => {
+        for (let tt = 0; tt < 6; tt++) e[tKey(q,r,tt)] = 1;
+      });
+      return { terrain: t, elevation: e };
     }
   },
 };
@@ -2335,18 +2386,27 @@ function calcToHit(attacker, target, weapon) {
   const arc = isInFireArc(attacker, target);
   if (arc === 'none') return null;
 
-  // Range check
+  // Range check — height advantage extends effective range (+1 per level above target)
   const dist = hexDist(attacker, target);
-  if (dist > weapon.range) return null;
+  const attElev = elevationAt(attacker.wx, attacker.wy);
+  const tgtElev = elevationAt(target.wx, target.wy);
+  const elevDiff = attElev - tgtElev;                    // positive = attacker higher
+  const effectiveRange = weapon.range + Math.max(0, elevDiff);  // extra range when shooting down
+  if (dist > effectiveRange) return null;
 
   let tn = weapon.tn; // base = 10
 
   // Half-arc penalty
   if (arc === 'half') tn += 2;
 
-  // Range bands
-  if (dist > weapon.range * 0.6) tn += 2;  // long range
-  if (dist <= 3)                 tn -= 1;  // point blank
+  // Range bands (use effectiveRange so downhill long-range is calculated correctly)
+  if (dist > effectiveRange * 0.6) tn += 2;  // long range
+  if (dist <= 3)                   tn -= 1;  // point blank
+
+  // Elevation modifiers — shooting uphill is harder, downhill easier
+  // elevDiff > 0: attacker higher → -1 TN per level (easier shot)
+  // elevDiff < 0: attacker lower  → +1 TN per level (harder shot)
+  tn -= elevDiff;  // subtracts negative when shooting uphill = adds TN
 
   // Attacker movement — sprinting makes aiming harder.
   // Piloting skill raises the threshold at which the penalty kicks in.
@@ -2697,6 +2757,17 @@ function drawHexLayer() {
           ctx.closePath();
           ctx.fillStyle = col; ctx.fill();
         }
+        // Elevation tint — painted on top of terrain colour
+        const elev = elevationTiles[k] ?? 0;
+        const tint = ELEVATION_TINTS[elev];
+        if (tint) {
+          ctx.beginPath();
+          ctx.moveTo(tri[0].x, tri[0].y);
+          ctx.lineTo(tri[1].x, tri[1].y);
+          ctx.lineTo(tri[2].x, tri[2].y);
+          ctx.closePath();
+          ctx.fillStyle = tint; ctx.fill();
+        }
       });
 
       // ── Hex grid overlay ─────────────────────────────────────────
@@ -2733,12 +2804,26 @@ function drawTriGrid() {
         ctx.strokeStyle = hov ? 'rgba(0,255,136,0.38)' : 'rgba(0,255,136,0.07)';
         ctx.lineWidth = 0.5; ctx.stroke();
         const c = tCent(tri);
-        // Show terrain type label in editor mode
+        // Show terrain type label or elevation in editor mode
         const type = terrainTiles[k];
-        if (mode === 'terrain' && type && type !== 'open') {
+        const elev = elevationTiles[k] ?? 0;
+        if (mode === 'terrain' && selectedElevationMode) {
+          // Elevation paint mode — show level number prominently
+          if (elev > 0) {
+            ctx.fillStyle = 'rgba(255,255,180,0.75)';
+            ctx.font = '5px Share Tech Mono'; ctx.textAlign = 'center';
+            ctx.fillText(ELEVATION_LABELS[elev], c.x, c.y + 2);
+          }
+        } else if (mode === 'terrain' && type && type !== 'open') {
           ctx.fillStyle = 'rgba(255,255,255,0.55)';
           ctx.font = '4px Share Tech Mono'; ctx.textAlign = 'center';
           ctx.fillText(TERRAIN_TYPES[type]?.label ?? type, c.x, c.y + 2);
+          // Show elevation superscript if non-zero
+          if (elev > 0) {
+            ctx.fillStyle = 'rgba(255,255,180,0.65)';
+            ctx.font = '4px Share Tech Mono';
+            ctx.fillText(`+${elev}`, c.x, c.y - 4);
+          }
         } else {
           ctx.fillStyle = 'rgba(0,255,136,0.12)';
           ctx.font = '5px Share Tech Mono'; ctx.textAlign = 'center';
@@ -2891,6 +2976,17 @@ function drawFacingCones() {
       ctx.textAlign = 'center';
       ctx.fillStyle = isP1 ? 'rgba(0,255,136,0.92)' : 'rgba(255,68,68,0.92)';
       ctx.fillText(mech.name, cx, cy + OUTLINE_R + 14);
+    }
+
+    // Elevation badge — small ▲ indicator when mech is on elevated ground
+    const mechElev = elevationAt(mech.wx, mech.wy);
+    if (mechElev > 0) {
+      const badgeX = cx + OUTLINE_R * 0.55;
+      const badgeY = cy - OUTLINE_R * 0.55;
+      ctx.font      = 'bold 8px Share Tech Mono';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = mechElev === 2 ? 'rgba(255,255,140,0.95)' : 'rgba(255,255,140,0.70)';
+      ctx.fillText(`▲${mechElev}`, badgeX, badgeY);
     }
   });
 }
@@ -3310,7 +3406,6 @@ function updateTerrainPanel() {
   const panel = document.getElementById('wpanel');
   if (!panel) return;
   if (mode !== 'terrain') {
-    // hide terrain section if visible
     const ts = document.getElementById('terrain-section');
     if (ts) ts.style.display = 'none';
     return;
@@ -3322,17 +3417,26 @@ function updateTerrainPanel() {
     panel.appendChild(ts);
   }
   ts.style.display = '';
+
+  // ── Mode toggle ──────────────────────────────────────────────────
+  const terrainActive = !selectedElevationMode;
+  const elevActive    =  selectedElevationMode;
+
   ts.innerHTML = `
     <div class="ptitle" style="margin-top:8px;">// TERRAIN EDITOR</div>
-    <div style="font-size:9px;color:var(--dim);margin-bottom:4px;">Click or drag to paint tiles</div>
-    <div id="terrain-btns" style="display:flex;flex-direction:column;gap:3px;"></div>
+    <div style="display:flex;gap:4px;margin:5px 0;">
+      <button class="wbtn" id="tmode-terrain" style="${terrainActive?'border-color:#00ff88;color:#00ff88;':''}" onclick="selectedElevationMode=false;updateTerrainPanel();">TERRAIN TYPE</button>
+      <button class="wbtn" id="tmode-elev"    style="${elevActive?'border-color:#ffee88;color:#ffee88;':''}" onclick="selectedElevationMode=true;updateTerrainPanel();">ELEVATION</button>
+    </div>
+    <div id="terrain-btns" style="display:flex;flex-direction:column;gap:3px;${terrainActive?'':'display:none!important'}"></div>
+    <div id="elev-btns"    style="display:flex;flex-direction:column;gap:3px;${elevActive?'':'display:none!important'}"></div>
     <div style="margin-top:8px;font-size:9px;color:var(--dim);">MAP PRESETS</div>
     <div id="preset-btns" style="display:flex;flex-direction:column;gap:3px;margin-top:3px;"></div>
     <button class="wbtn" style="margin-top:6px;font-size:9px;color:#ff4444;border-color:#ff4444;opacity:0.7;"
-      onclick="if(confirm('Clear all terrain?')){terrainTiles={};draw();}">CLEAR ALL TERRAIN</button>
+      onclick="if(confirm('Clear all terrain and elevation?')){terrainTiles={};elevationTiles={};draw();}">CLEAR ALL</button>
   `;
 
-  // Terrain type buttons
+  // ── Terrain type buttons ─────────────────────────────────────────
   const tBtns = ts.querySelector('#terrain-btns');
   Object.entries(TERRAIN_TYPES).forEach(([key, def]) => {
     const btn = document.createElement('button');
@@ -3349,7 +3453,31 @@ function updateTerrainPanel() {
     tBtns.appendChild(btn);
   });
 
-  // Preset buttons
+  // ── Elevation buttons ────────────────────────────────────────────
+  const eBtns = ts.querySelector('#elev-btns');
+  const elevDefs = [
+    { level:0, label:'LOW  (0)',  desc:'No modifier',              tint:'rgba(255,255,255,0.06)', tnNote:'baseline' },
+    { level:1, label:'MID  (+1)', desc:'+1 rng shooting down, -1 TN', tint:'rgba(255,255,200,0.18)', tnNote:'-1 TN down  +1 TN up' },
+    { level:2, label:'HIGH (+2)', desc:'+2 rng shooting down, -2 TN', tint:'rgba(255,255,200,0.34)', tnNote:'-2 TN down  +2 TN up' },
+  ];
+  elevDefs.forEach(def => {
+    const btn = document.createElement('button');
+    btn.className = 'wbtn';
+    const sel = def.level === selectedElevationLevel;
+    const swatch = `<span style="display:inline-block;width:10px;height:10px;background:${def.tint};border:1px solid rgba(255,255,180,0.4);vertical-align:middle;margin-right:4px;"></span>`;
+    btn.innerHTML = `${swatch}${def.label}`;
+    if (sel) { btn.style.borderColor = '#ffee88'; btn.style.color = '#ffee88'; }
+    btn.title = `${def.desc} · ${def.tnNote}`;
+    btn.onclick = () => { selectedElevationLevel = def.level; updateTerrainPanel(); };
+    eBtns.appendChild(btn);
+  });
+  // Instruction note
+  const note = document.createElement('div');
+  note.style.cssText = 'font-size:8px;color:var(--dim);margin-top:4px;line-height:1.5;';
+  note.textContent = 'Click or drag to set elevation. Shooting downhill: -1 TN/level, extended range. Uphill: +1 TN/level.';
+  eBtns.appendChild(note);
+
+  // ── Preset buttons ───────────────────────────────────────────────
   const pBtns = ts.querySelector('#preset-btns');
   Object.entries(MAP_PRESETS).forEach(([key, preset]) => {
     const btn = document.createElement('button');
@@ -3365,8 +3493,10 @@ function updateTerrainPanel() {
 function applyMapPreset(key) {
   const preset = MAP_PRESETS[key];
   if (!preset) return;
-  terrainTiles = preset.build();
-  activePreset = key;
+  const result   = preset.build();
+  terrainTiles   = result.terrain   ?? result;   // fallback: treat result directly as terrain map
+  elevationTiles = result.elevation ?? {};
+  activePreset   = key;
   addLog(`Map preset loaded: ${preset.label}`, 'ok');
   updateTerrainPanel();
   draw();
@@ -3540,19 +3670,26 @@ canvas.addEventListener('mousemove', e => {
   if (mode === 'terrain' && e.buttons === 1) {
     const { q, r, t } = w2tri(wx, wy);
     const k = tKey(q, r, t);
-    if (selectedTerrainType === 'open') delete terrainTiles[k];
-    else terrainTiles[k] = selectedTerrainType;
+    if (selectedElevationMode) {
+      if (selectedElevationLevel === 0) delete elevationTiles[k];
+      else elevationTiles[k] = selectedElevationLevel;
+    } else {
+      if (selectedTerrainType === 'open') delete terrainTiles[k];
+      else terrainTiles[k] = selectedTerrainType;
+    }
   }
 
   const pathCost = (mode === 'move' && currentPath) ? currentPath.length - 1 : null;
   const costStr  = pathCost !== null ? `  COST:${pathCost}` : '';
-  document.getElementById('rCur').textContent = `hex(${tri.q},${tri.r}) t[${tri.t}]${costStr}`;
+  const curElev  = elevationTiles[mTriKey] ?? 0;
+  const elevStr  = curElev > 0 ? `  ▲${ELEVATION_LABELS[curElev]}` : '';
+  document.getElementById('rCur').textContent = `hex(${tri.q},${tri.r}) t[${tri.t}]${elevStr}${costStr}`;
   const tip = document.getElementById('tip');
   tip.style.left = (cx+13)+'px'; tip.style.top = (cy-16)+'px';
   tip.style.display = 'block';
   tip.textContent = pathCost !== null
-    ? `${tri.q},${tri.r}:${tri.t}  ·  ${pathCost} steps`
-    : `${tri.q},${tri.r}:${tri.t}`;
+    ? `${tri.q},${tri.r}:${tri.t}${elevStr}  ·  ${pathCost} steps`
+    : `${tri.q},${tri.r}:${tri.t}${elevStr}`;
   draw();
 });
 canvas.addEventListener('mouseleave', () => {
@@ -3575,10 +3712,12 @@ canvas.addEventListener('click', e => {
   if (mode === 'terrain') {
     const { q, r, t } = w2tri(wx, wy);
     const k = tKey(q, r, t);
-    if (selectedTerrainType === 'open') {
-      delete terrainTiles[k];
+    if (selectedElevationMode) {
+      if (selectedElevationLevel === 0) delete elevationTiles[k];
+      else elevationTiles[k] = selectedElevationLevel;
     } else {
-      terrainTiles[k] = selectedTerrainType;
+      if (selectedTerrainType === 'open') delete terrainTiles[k];
+      else terrainTiles[k] = selectedTerrainType;
     }
     draw();
     return;
