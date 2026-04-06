@@ -13,6 +13,8 @@
     --amb:#ffaa00;--blu:#88aaff;
     --bg:#060a07;--pan:#08100a;--bdr:#14221a;
     --txt:#00cc66;--dim:#005522;
+    --ui-size: 1;        /* text scale multiplier, applied via JS */
+    --log-size: 10px;    /* log entry font size */
   }
   /* ── LIGHT THEME ─────────────────────────────────────────────── */
   body.theme-light {
@@ -22,24 +24,57 @@
     --bg:#e8f0eb;--pan:#d4e4da;--bdr:#8aaa96;
     --txt:#004422;--dim:#336644;
   }
-  /* log text colours must be legible on both themes */
+  /* ── SETTINGS COG ───────────────────────────────────────────────── */
+  #settings-cog {
+    position:fixed;bottom:14px;right:14px;z-index:950;
+    width:32px;height:32px;border-radius:50%;
+    background:rgba(8,16,10,0.85);border:1px solid var(--bdr);
+    color:var(--dim);font-size:16px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    transition:color .15s, border-color .15s, transform .15s;
+    backdrop-filter:blur(6px);
+    box-shadow:0 2px 12px rgba(0,0,0,0.4);
+    filter:none !important;  /* immune to body brightness filter */
+  }
+  #settings-cog:hover{color:var(--ph);border-color:var(--phd);transform:rotate(30deg);}
+  #settings-panel {
+    position:fixed;bottom:56px;right:14px;z-index:950;
+    background:var(--pan);border:1px solid var(--bdr);
+    padding:14px 16px;width:220px;
+    display:flex;flex-direction:column;gap:10px;
+    box-shadow:0 4px 24px rgba(0,0,0,0.5);
+    backdrop-filter:blur(8px);
+    transform:translateY(8px);opacity:0;
+    pointer-events:none;transition:all .15s;
+    filter:none !important;  /* immune to body brightness filter */
+  }
+  #settings-panel.open{transform:translateY(0);opacity:1;pointer-events:all;}
+  .sett-title{
+    font-family:'Orbitron',sans-serif;font-size:8px;letter-spacing:3px;
+    color:var(--dim);border-bottom:1px solid var(--bdr);padding-bottom:6px;
+  }
+  .sett-row{display:flex;flex-direction:column;gap:5px;}
+  .sett-label{font-size:8px;color:var(--dim);letter-spacing:2px;}
+  .sett-btns{display:flex;gap:4px;}
+  .sett-btn{
+    font-family:'Share Tech Mono',monospace;font-size:10px;
+    background:transparent;border:1px solid var(--bdr);color:var(--dim);
+    padding:4px 8px;cursor:pointer;transition:all .12s;flex:1;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .sett-btn:hover{color:var(--ph);border-color:var(--phd);}
+  .sett-btn.active{color:var(--ph);border-color:var(--ph);background:rgba(0,255,136,0.07);}
+  .sett-slider{
+    width:100%;accent-color:var(--ph);cursor:pointer;
+    height:4px;
+  }
+  /* ── LOG CONTROLS (kept for legacy, now hidden — settings panel replaces) */
+  .log-controls { display:none; }
+  /* log text colours — legible on both dark and light themes */
   .le     { color: var(--txt) !important; }
   .le.ok  { color: var(--phd) !important; }
   .le.bad { color: var(--red) !important; }
   .le .ts { color: var(--dim) !important; opacity:0.7; }
-  /* ── LOG CONTROLS ────────────────────────────────────────────── */
-  .log-controls {
-    display:flex;align-items:center;gap:3px;padding:4px 8px;
-    border-bottom:1px solid var(--bdr);flex-shrink:0;
-  }
-  .log-ctrl-btn {
-    font-family:'Share Tech Mono',monospace;font-size:11px;
-    background:transparent;border:1px solid var(--bdr);color:var(--dim);
-    width:22px;height:22px;cursor:pointer;display:flex;align-items:center;
-    justify-content:center;transition:all .12s;flex-shrink:0;
-  }
-  .log-ctrl-btn:hover{color:var(--ph);border-color:var(--phd);}
-  .log-ctrl-btn.theme-active{color:var(--amb);border-color:var(--amb);}
   *{margin:0;padding:0;box-sizing:border-box;}
   body{
     background:var(--bg);color:var(--txt);
@@ -480,6 +515,40 @@
 <div class="sync-row" id="syncRow">
   <div class="sync-dot" id="syncDot"></div>
   <span id="syncTxt">Saving…</span>
+</div>
+
+<!-- ── SETTINGS COG ────────────────────────────────────────────── -->
+<button id="settings-cog" onclick="toggleSettings()" title="Settings">⚙</button>
+<div id="settings-panel">
+  <div class="sett-title">// DISPLAY SETTINGS</div>
+
+  <div class="sett-row">
+    <div class="sett-label">THEME</div>
+    <div class="sett-btns">
+      <button class="sett-btn" id="sett-dark"  onclick="setTheme('dark')">🌙 DARK</button>
+      <button class="sett-btn" id="sett-light" onclick="setTheme('light')">☀ LIGHT</button>
+    </div>
+  </div>
+
+  <div class="sett-row">
+    <div class="sett-label">BRIGHTNESS</div>
+    <input class="sett-slider" type="range" id="sett-brightness"
+           min="50" max="150" step="5" value="100"
+           oninput="setBrightness(this.value)">
+  </div>
+
+  <div class="sett-row">
+    <div class="sett-label">TEXT SIZE</div>
+    <div class="sett-btns">
+      <button class="sett-btn" onclick="adjustTextSize(-1)">A−</button>
+      <button class="sett-btn" id="sett-size-lbl" style="flex:2;cursor:default;">100%</button>
+      <button class="sett-btn" onclick="adjustTextSize(+1)">A+</button>
+    </div>
+  </div>
+
+  <div class="sett-row">
+    <button class="sett-btn" onclick="resetDisplaySettings()" style="color:var(--dim);">RESET DEFAULTS</button>
+  </div>
 </div>
 
 <!-- ── AUTH SCREEN ─────────────────────────────────────────────── -->
@@ -1877,28 +1946,75 @@ let selectedTerrainType = 'woods_light';  // terrain type currently selected in 
 let selectedElevationMode = false;        // true = painting elevation, false = painting terrain type
 let selectedElevationLevel = 1;          // 0=LOW 1=MID 2=HIGH — level to paint
 
-// ── LOG DISPLAY CONTROLS ─────────────────────────────────────────
-let logFontSize = parseInt(localStorage.getItem('ironfield_logsize') ?? '10', 10);
-let logTheme    = localStorage.getItem('ironfield_theme') ?? 'dark';
+// ── DISPLAY SETTINGS ─────────────────────────────────────────────
+// Persisted in localStorage. Controls theme, brightness, and text size globally.
+let settingsOpen = false;
+let uiTheme      = localStorage.getItem('if_theme')      ?? 'dark';
+let uiBrightness = parseInt(localStorage.getItem('if_brightness') ?? '100', 10);
+let uiTextSize   = parseInt(localStorage.getItem('if_textsize')   ?? '100', 10);
 
-function applyLogPrefs() {
-  document.documentElement.style.setProperty('--log-size', logFontSize + 'px');
-  document.body.classList.toggle('theme-light', logTheme === 'light');
-  const btnLight = document.getElementById('btn-theme-light');
-  const btnDark  = document.getElementById('btn-theme-dark');
-  if (btnLight) btnLight.classList.toggle('theme-active', logTheme === 'light');
-  if (btnDark)  btnDark.classList.toggle('theme-active',  logTheme === 'dark');
+// Legacy vars — kept so any lingering references don't throw
+let logFontSize = 10;
+let logTheme    = 'dark';
+
+function toggleSettings() {
+  settingsOpen = !settingsOpen;
+  document.getElementById('settings-panel').classList.toggle('open', settingsOpen);
 }
-function adjustLogSize(delta) {
-  logFontSize = Math.max(8, Math.min(16, logFontSize + delta));
-  localStorage.setItem('ironfield_logsize', logFontSize);
-  applyLogPrefs();
+
+function applyDisplaySettings() {
+  // Theme
+  document.body.classList.toggle('theme-light', uiTheme === 'light');
+  const btnDark  = document.getElementById('sett-dark');
+  const btnLight = document.getElementById('sett-light');
+  if (btnDark)  btnDark.classList.toggle('active',  uiTheme === 'dark');
+  if (btnLight) btnLight.classList.toggle('active', uiTheme === 'light');
+
+  // Brightness — CSS filter on body
+  document.body.style.filter = uiBrightness === 100 ? '' : `brightness(${uiBrightness}%)`;
+
+  // Sync slider value
+  const slider = document.getElementById('sett-brightness');
+  if (slider) slider.value = uiBrightness;
+
+  // Text size — base font size drives all em-based measurements
+  const scale = uiTextSize / 100;
+  document.body.style.fontSize = (10 * scale) + 'px';
+  document.documentElement.style.setProperty('--log-size', (10 * scale) + 'px');
+  const sizeLbl = document.getElementById('sett-size-lbl');
+  if (sizeLbl) sizeLbl.textContent = uiTextSize + '%';
 }
-function setLogTheme(theme) {
-  logTheme = theme;
-  localStorage.setItem('ironfield_theme', theme);
-  applyLogPrefs();
+
+function setTheme(theme) {
+  uiTheme = theme;
+  localStorage.setItem('if_theme', theme);
+  applyDisplaySettings();
 }
+
+function setBrightness(val) {
+  uiBrightness = parseInt(val, 10);
+  localStorage.setItem('if_brightness', uiBrightness);
+  applyDisplaySettings();
+}
+
+function adjustTextSize(delta) {
+  uiTextSize = Math.max(70, Math.min(140, uiTextSize + delta * 10));
+  localStorage.setItem('if_textsize', uiTextSize);
+  applyDisplaySettings();
+}
+
+function resetDisplaySettings() {
+  uiTheme = 'dark'; uiBrightness = 100; uiTextSize = 100;
+  localStorage.setItem('if_theme', uiTheme);
+  localStorage.setItem('if_brightness', uiBrightness);
+  localStorage.setItem('if_textsize', uiTextSize);
+  applyDisplaySettings();
+}
+
+// Legacy stubs — so old HTML button calls don't throw
+function applyLogPrefs() { applyDisplaySettings(); }
+function adjustLogSize() {}
+function setLogTheme(t)  { setTheme(t); }
 
 // ── HEX / TRI GEOMETRY ──────────────────────────────────────────
 function hCentre(q, r) {
@@ -2434,13 +2550,23 @@ function hexDist(a, b) {
   return Math.max(Math.abs(ha.q-hb.q), Math.abs(ha.r-hb.r), Math.abs(s1-s2));
 }
 
-// Fire arc check using existing coverage geometry.
-// Returns 'full', 'half', or 'none'.
+// Fire arc check — returns 'full', 'half', or 'none'.
+// Uses bearing from attacker to target relative to mech facing.
+// Full arc: target within ±60° of facing (the front 120° wedge).
+// Half arc: target within ±90° of facing (the side 180° wedge).
+// Rear (>90° off facing): 'none' — cannot fire behind.
 function isInFireArc(attacker, target) {
-  const { full, half } = getCoverage(attacker);
-  const th = w2hex(target.wx, target.wy);
-  if (full.some(t => t.q === th.q && t.r === th.r)) return 'full';
-  if (half.some(t => t.q === th.q && t.r === th.r)) return 'half';
+  // Bearing from attacker to target in canvas space (east = 0°, clockwise)
+  const canvasBearing = Math.atan2(target.wy - attacker.wy, target.wx - attacker.wx) * 180 / Math.PI;
+  // Convert to north-up bearing (same convention as mech.facing: 0=north, clockwise)
+  const northBearing = ((canvasBearing + 90) % 360 + 360) % 360;
+  // Angular difference from mech facing, normalised to [-180, 180]
+  let diff = northBearing - attacker.facing;
+  if (diff >  180) diff -= 360;
+  if (diff < -180) diff += 360;
+  const absDiff = Math.abs(diff);
+  if (absDiff <= 60)  return 'full';
+  if (absDiff <= 90)  return 'half';
   return 'none';
 }
 
@@ -3820,9 +3946,15 @@ canvas.addEventListener('click', e => {
     else { selId = null; updatePanel(); buildRoster(); draw(); }
   }
   if (mode === 'move') {
-    if (near && near.id !== selId) { selMech(near.id); return; }
+    if (near && near.id !== selId) {
+      // Only allow selecting own mechs to move
+      if (near.player !== myPlayer) return;
+      selMech(near.id); return;
+    }
     if (selId && hovVert) {
       const m    = mechs.find(x => x.id === selId);
+      // Safety guard: should never happen, but don't move enemy mechs
+      if (!m || m.player !== myPlayer) return;
       if (mechShutDown(m)) {
         addLog(`${m.name}: SHUT DOWN — cannot move`, 'bad'); return;
       }
@@ -3841,9 +3973,13 @@ canvas.addEventListener('click', e => {
     }
   }
   if (mode === 'rotate') {
+    // Only allow rotating own mechs
+    if (near && near.player !== myPlayer) return;
     if (near) selMech(near.id);
     if (selId) {
       const m   = mechs.find(x => x.id === selId);
+      // Safety guard
+      if (!m || m.player !== myPlayer) return;
       const canvasDeg = Math.atan2(wy - m.wy, wx - m.wx) * 180 / Math.PI;
       const northDeg  = canvasDeg + 90;   // convert east-zero to north-zero
       m.facing  = ((Math.round(northDeg / 30) * 30) % 360 + 360) % 360;
@@ -3957,11 +4093,14 @@ canvas.addEventListener('touchend', () => { touchPanStart = null; });
 document.addEventListener('keydown', e => {
   if (!selId) return;
   const m = mechs.find(x => x.id === selId);
+  if (!m) return;
   switch(e.key) {
     case 'q': case 'Q': case ',':
+      if (m.player !== myPlayer) break;  // can't rotate enemy mechs
       m.facing = ((m.facing-30)+360)%360;
       addLog(`${m.name} → ${m.facing}°`,'ok'); updatePanel(); buildRoster(); draw(); break;
     case 'e': case 'E': case '.':
+      if (m.player !== myPlayer) break;  // can't rotate enemy mechs
       m.facing = (m.facing+30)%360;
       addLog(`${m.name} → ${m.facing}°`,'ok'); updatePanel(); buildRoster(); draw(); break;
     case 's': setMode('select'); break;
@@ -3994,7 +4133,17 @@ function resize() {
 window.addEventListener('resize', resize);
 buildVertexList();
 buildAdjacency();
-applyLogPrefs();
+applyDisplaySettings();
+
+// Close settings panel when clicking outside it
+document.addEventListener('click', e => {
+  if (settingsOpen &&
+      !document.getElementById('settings-panel').contains(e.target) &&
+      e.target.id !== 'settings-cog') {
+    settingsOpen = false;
+    document.getElementById('settings-panel').classList.remove('open');
+  }
+});
 
 setTimeout(() => {
   addLog('Phase 2 — multiplayer ready', 'ok');
