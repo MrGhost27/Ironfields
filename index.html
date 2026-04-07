@@ -700,6 +700,7 @@
       <button class="tb los" id="b-los"  onclick="setMode('los')">[ LOS ]</button>
       <button class="tb fire" id="b-fire" onclick="setMode('fire')">[ FIRE ]</button>
       <button class="tb" id="b-terrain" onclick="setMode('terrain')" style="color:#88ddff;border-color:#1e3344;">[ TERRAIN ]</button>
+      <button class="tb" id="b-undo" onclick="undoMove()" style="color:var(--amb);border-color:#332200;" title="Undo last move of selected mech">[ UNDO ]</button>
       <button class="tb"     id="b-tg"   onclick="togFlag('tri')">[ TRI GRID ]</button>
       <button class="tb on"  id="b-out"  onclick="togFlag('out')">[ OUTLINE ]</button>
       <button class="tb on"  id="b-half" onclick="togFlag('half')">[ HALF TRIS ]</button>
@@ -1277,8 +1278,12 @@ function buildStartState() {
     return { wx: v.wx, wy: v.wy };
   };
 
-  const p1q = 3,  p1r0 = -Math.floor(p1q / 2) + 2;   // left side
-  const p2q = 25, p2r0 = -Math.floor(p2q / 2) + 2;   // right side
+  // Spawn columns — use preset-specific positions if defined (e.g. brawl range)
+  const presetSpawn = MAP_PRESETS[activePreset]?.spawnCols;
+  const p1q = presetSpawn?.p1 ?? 3;
+  const p2q = presetSpawn?.p2 ?? 25;
+  const p1r0 = -Math.floor(p1q / 2) + 2;
+  const p2r0 = -Math.floor(p2q / 2) + 2;
 
   const mkMech = (id, player, name, cls, facing, q, r, pilotName) => {
     const c = MECH_CLASSES[cls];
@@ -1687,6 +1692,7 @@ function resetPlanUI() {
   myPlanSubmitted    = false;
   enemyPlanSubmitted = false;
   fireOrders         = [];
+  moveHistory        = {};
   selectedWeapon     = null;
   hoveredEnemy       = null;
   mechs.forEach(m => m.mpSpent = 0);
@@ -1939,6 +1945,8 @@ let isPanning = false, panStartX = 0, panStartY = 0, panOx = 0, panOy = 0;
 let gamePhase = 'planning'; // 'deployment' | 'planning'
 // fire orders queued this planning phase: [{ attacker_id, target_id, weapon }]
 let fireOrders = [];
+// move history for undo: map of mechId → stack of {wx, wy, mpSpent, facing} snapshots
+let moveHistory = {};  // cleared each turn by resetPlanUI
 // weapon picker state
 let selectedWeapon     = null;   // weaponKey string currently selected in the picker
 let hoveredEnemy       = null;   // mech being hovered in fire mode (for live TN preview)
@@ -2414,6 +2422,23 @@ const MAP_PRESETS = {
         for (let tt = 0; tt < 6; tt++) e[tKey(q,r,tt)] = 1;
       });
       return { terrain: t, elevation: e };
+    }
+  },
+  brawl: {
+    label: 'BRAWL RANGE',
+    spawnCols: { p1: 11, p2: 17 },  // ~6 hexes apart — used by buildStartState
+    build: () => {
+      const t = {};
+      // Central rubble ring for cover between the two forces
+      [[13,0],[13,1],[14,0],[14,1],[14,-1],[15,0],[15,1]].forEach(([q,r]) =>
+        Object.assign(t, hexTiles(q, r, 'rubble')));
+      // Ruin clusters on each flank for tactical cover
+      [[12,-1],[12,0],[16,1],[16,2]].forEach(([q,r]) =>
+        Object.assign(t, hexTiles(q, r, 'ruin')));
+      // Light woods at the flanks
+      [[10,0],[10,1],[18,1],[18,2]].forEach(([q,r]) =>
+        Object.assign(t, hexTiles(q, r, 'woods_light')));
+      return { terrain: t, elevation: {} };
     }
   },
 };
@@ -3165,13 +3190,19 @@ function drawFacingCones() {
     ctx.lineWidth   = isSel ? 2 : 1;
     ctx.stroke();
 
-    // Centre dot (anchor point)
+    // Centre pilot avatar — small portrait circle
+    const avatarR  = isSel ? 9 : 6;
+    const mechCol  = isP1 ? '#00ff88' : '#ff4444';
+    // Draw backing circle first (synchronous)
     ctx.beginPath();
-    ctx.arc(cx, cy, isSel ? 4 : 2.5, 0, Math.PI * 2);
-    ctx.fillStyle = isP1
-      ? (isSel ? '#00ff88' : '#006633')
-      : (isSel ? '#ff4444' : '#881111');
+    ctx.arc(cx, cy, avatarR + 1, 0, Math.PI * 2);
+    ctx.fillStyle = '#0c1a0e';
     ctx.fill();
+    ctx.strokeStyle = isP1 ? (isSel ? '#00ff88' : '#006633') : (isSel ? '#ff4444' : '#881111');
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // Draw avatar async (image loads; canvas redraws on next interaction are fine)
+    drawPilotAvatar(cx, cy, avatarR, mech.pilotName, mechCol);
 
     // Destroyed wreck — dim X over the mech position
     if (mech.destroyed) {
@@ -3189,12 +3220,16 @@ function drawFacingCones() {
       return;
     }
 
-    // Name label (selected only)
-    if (isSel) {
-      ctx.font      = 'bold 9px Orbitron';
+    // Pilot name label — always shown below token
+    {
+      const labelY = cy + avatarR + 14;
+      ctx.font      = isSel ? 'bold 9px Orbitron' : '8px Share Tech Mono';
       ctx.textAlign = 'center';
-      ctx.fillStyle = isP1 ? 'rgba(0,255,136,0.92)' : 'rgba(255,68,68,0.92)';
-      ctx.fillText(mech.name, cx, cy + OUTLINE_R + 14);
+      ctx.fillStyle = isP1
+        ? (isSel ? 'rgba(0,255,136,0.92)' : 'rgba(0,200,100,0.55)')
+        : (isSel ? 'rgba(255,68,68,0.92)'  : 'rgba(255,68,68,0.55)');
+      const label = isSel ? `${mech.name} · ${mech.pilotName ?? ''}` : (mech.pilotName ?? mech.name);
+      ctx.fillText(label, cx, labelY);
     }
 
     // Elevation badge — small ▲ indicator when mech is on elevated ground
@@ -3469,10 +3504,11 @@ function setMode(m) {
 function selMech(id) {
   selId = id;
   if (mode === 'los') losId = id;
-  // When selecting a new mech in fire mode, pre-select its currently ordered weapon (if any)
+  // In fire mode: keep selectedWeapon if it's valid for this mech, else clear
   if (mode === 'fire') {
-    const order = fireOrders.find(fo => fo.attacker_id === id);
-    selectedWeapon = order ? order.weapon : null;
+    const m = mechs.find(x => x.id === id);
+    const validWeapons = MECH_CLASSES[m?.cls]?.weapons ?? [];
+    if (!validWeapons.includes(selectedWeapon)) selectedWeapon = null;
   }
   updatePanel(); buildRoster(); updateWeaponPicker(null); draw();
 }
@@ -3537,57 +3573,59 @@ function updateWeaponPicker(hovEnemy) {
     return;
   }
 
-  // Build the preview target — either the hovered enemy or the one already ordered
-  const existingOrder = fireOrders.find(fo => fo.attacker_id === attacker.id);
-  const previewTarget = hovEnemy ?? (existingOrder ? mechs.find(m => m.id === existingOrder.target_id) : null);
+  // Show hovered enemy name at top, or current selected weapon's assigned target
+  const selWeaponOrder = selectedWeapon
+    ? fireOrders.find(fo => fo.attacker_id === attacker.id && fo.weapon === selectedWeapon)
+    : null;
+  const previewTarget = hovEnemy
+    ?? (selWeaponOrder ? mechs.find(m => m.id === selWeaponOrder.target_id) : null);
 
-  // Target label
   if (previewTarget) {
-    targetEl.textContent = `→ ${previewTarget.name}`;
+    targetEl.textContent = '\u2192 ' + previewTarget.name;
+  } else if (selectedWeapon) {
+    targetEl.textContent = WEAPONS[selectedWeapon]?.label + ' selected \u2014 click enemy';
   } else {
-    targetEl.textContent = existingOrder
-      ? `→ ${mechs.find(m => m.id === existingOrder.target_id)?.name ?? '?'}`
-      : '— no target —';
+    targetEl.textContent = '\u2014 select weapon, then click enemy \u2014';
   }
 
-  // Build weapon buttons
+  // Build weapon buttons — one per weapon, showing assigned target if any
   const cls = MECH_CLASSES[attacker.cls];
   btnsEl.innerHTML = '';
   cls.weapons.forEach(wKey => {
-    const w   = WEAPONS[wKey];
+    const w = WEAPONS[wKey];
     if (!w) return;
-    const disabled = mechWeaponDisabled(attacker, wKey);
-    const tn  = (!disabled && previewTarget) ? calcToHit(attacker, previewTarget, w) : null;
-    const impossible = !disabled && tn === null && previewTarget !== null;
-    const isSel = selectedWeapon === wKey && !disabled;
+    const disabled    = mechWeaponDisabled(attacker, wKey);
+    const thisOrder   = fireOrders.find(fo => fo.attacker_id === attacker.id && fo.weapon === wKey);
+    const assignedTgt = thisOrder ? mechs.find(m => m.id === thisOrder.target_id) : null;
+    const tn          = (!disabled && previewTarget) ? calcToHit(attacker, previewTarget, w) : null;
+    const impossible  = !disabled && tn === null && previewTarget !== null;
+    const isSel       = selectedWeapon === wKey && !disabled;
 
     const btn = document.createElement('button');
-    btn.className = `wp-btn${isSel ? ' sel' : ''}${disabled ? ' disabled-weapon' : ''}`;
+    btn.className = 'wp-btn' + (isSel ? ' sel' : '') + (disabled ? ' disabled-weapon' : '');
     btn.disabled  = impossible || disabled;
 
-    let tnStr = '';
-    let tnCls = '';
+    let tnStr = '', tnCls = '';
     if (disabled) {
-      tnStr = 'OFFLINE';
-      tnCls = 'bad';
+      tnStr = 'OFFLINE'; tnCls = 'bad';
+    } else if (assignedTgt && !previewTarget) {
+      // Show assigned target when not hovering
+      tnStr = '\u2192 ' + assignedTgt.name; tnCls = 'ok';
     } else if (previewTarget) {
-      if (tn === null) {
-        tnStr = 'NO SHOT';
-        tnCls = 'bad';
-      } else {
-        tnStr = `TN:${tn}`;
-        tnCls = tn <= 10 ? 'ok' : tn <= 14 ? '' : 'bad';
-      }
+      if (tn === null) { tnStr = 'NO SHOT'; tnCls = 'bad'; }
+      else { tnStr = 'TN:' + tn; tnCls = tn <= 10 ? 'ok' : tn <= 14 ? '' : 'bad'; }
     }
 
-    const mountLabel = w.mountedIn ? ` [${w.mountedIn.toUpperCase()}]` : '';
+    const mountLabel = w.mountedIn ? ' [' + w.mountedIn.toUpperCase() + ']' : '';
     const rangeLabel = disabled
-      ? `mount destroyed${mountLabel}`
-      : `RNG:${w.range}  DMG:${w.damage}${w.salvo ? `  SLV:${w.salvo}` : ''}  HT:${w.heat ?? 0}`;
+      ? 'mount destroyed' + mountLabel
+      : 'RNG:' + w.range + '  DMG:' + w.damage + (w.salvo ? '  SLV:' + w.salvo : '') + '  HT:' + (w.heat ?? 0);
 
-    btn.innerHTML = `
-      <span class="wlabel">${w.label}${tnStr ? `<span class="wtn ${tnCls}">${tnStr}</span>` : ''}</span>
-      <span class="wstats">${disabled ? '' : w.type.toUpperCase() + '  '}${rangeLabel}</span>`;
+    btn.innerHTML =
+      '<span class="wlabel">' + w.label +
+        (tnStr ? '<span class="wtn ' + tnCls + '">' + tnStr + '</span>' : '') +
+      '</span>' +
+      '<span class="wstats">' + (disabled ? '' : w.type.toUpperCase() + '  ') + rangeLabel + '</span>';
 
     if (!disabled) {
       btn.onclick = () => {
@@ -3599,25 +3637,54 @@ function updateWeaponPicker(hovEnemy) {
   });
 
   // Hint text
+  const totalOrders = fireOrders.filter(fo => fo.attacker_id === attacker.id).length;
   if (!selectedWeapon) {
-    hintEl.textContent = 'select a weapon, then click an enemy';
-  } else if (!previewTarget) {
-    hintEl.textContent = `${WEAPONS[selectedWeapon]?.label} ready — click an enemy`;
-  } else if (existingOrder) {
-    hintEl.textContent = 'order set — click enemy to retarget';
+    hintEl.textContent = totalOrders > 0
+      ? totalOrders + ' weapon' + (totalOrders > 1 ? 's' : '') + ' assigned \u2014 right-click to cancel one'
+      : 'select a weapon, then click an enemy';
+  } else if (selWeaponOrder) {
+    hintEl.textContent = 'order set \u2014 click enemy to retarget, right-click mech to cancel';
   } else {
-    hintEl.textContent = 'click an enemy to assign fire order';
+    hintEl.textContent = WEAPONS[selectedWeapon]?.label + ' ready \u2014 click an enemy';
   }
 
-  clearEl.style.display = existingOrder ? '' : 'none';
+  clearEl.style.display = totalOrders > 0 ? '' : 'none';
 }
 
 function clearFireOrder() {
   if (!selId) return;
-  fireOrders = fireOrders.filter(fo => fo.attacker_id !== selId);
-  addLog(`${mechs.find(m => m.id === selId)?.name ?? selId}: fire order cleared`);
+  if (selectedWeapon) {
+    // Clear only the selected weapon's order
+    const before = fireOrders.length;
+    fireOrders = fireOrders.filter(fo => !(fo.attacker_id === selId && fo.weapon === selectedWeapon));
+    if (fireOrders.length < before) {
+      addLog((mechs.find(m => m.id === selId)?.name ?? selId) + ': ' + (WEAPONS[selectedWeapon]?.label ?? selectedWeapon) + ' order cleared');
+    }
+  } else {
+    // Clear all orders for this mech
+    fireOrders = fireOrders.filter(fo => fo.attacker_id !== selId);
+    addLog((mechs.find(m => m.id === selId)?.name ?? selId) + ': all fire orders cleared');
+  }
   updateWeaponPicker(null);
   buildRoster(); draw();
+}
+
+function undoMove() {
+  if (!selId) { addLog('UNDO: select one of your mechs first', 'bad'); return; }
+  const m = mechs.find(x => x.id === selId);
+  if (!m || m.player !== myPlayer) return;
+  const history = moveHistory[m.id];
+  if (!history || history.length === 0) {
+    addLog(`${m.name}: no move to undo this turn`, 'bad'); return;
+  }
+  const prev = history.pop();
+  m.wx      = prev.wx;
+  m.wy      = prev.wy;
+  m.mpSpent = prev.mpSpent;
+  m.facing  = prev.facing;
+  addLog(`${m.name}: move undone — MP restored to ${mechMpLeft(m)}/${mechMpMax(m)}`, 'ok');
+  currentPath = null; hovVert = null;
+  updatePanel(); buildRoster(); draw();
 }
 
 // ── TERRAIN EDITOR ────────────────────────────────────────────────
@@ -3721,6 +3788,106 @@ function applyMapPreset(key) {
   draw();
 }
 
+// ── PILOT AVATAR ─────────────────────────────────────────────────
+// Generates a small deterministic portrait from the pilot's name.
+// Uses a simple string hash to pick colours and features — no external deps.
+
+function pilotHash(name) {
+  // Returns a stable 0–1 float and a stable integer from a pilot name string.
+  let h = 0;
+  for (let i = 0; i < (name ?? '').length; i++) {
+    h = ((h << 5) - h + (name ?? '').charCodeAt(i)) | 0;
+  }
+  return { f: (Math.abs(h) % 1000) / 1000, n: Math.abs(h) };
+}
+
+// Palette of face/skin tones and hair colours, themed to the game's green-on-black aesthetic
+const AVATAR_FACE_COLS = [
+  '#c8a87a','#d4956a','#e8c090','#b07850','#f0d0a0','#a06840','#8a5030','#ddb880'
+];
+const AVATAR_HAIR_COLS = [
+  '#1a1a1a','#2a1a00','#181818','#3a2800','#0a0a0a','#1e1000','#2c1c08','#100808'
+];
+
+// Returns an SVG string for a small portrait (size x size px)
+function pilotAvatarSVG(pilotName, size, playerColor) {
+  const { f, n } = pilotHash(pilotName ?? '?');
+  const faceCol  = AVATAR_FACE_COLS[n % AVATAR_FACE_COLS.length];
+  const hairCol  = AVATAR_HAIR_COLS[n % AVATAR_HAIR_COLS.length];
+  const eyeCol   = playerColor ?? '#00ff88';
+  const initials = (pilotName ?? '?').slice(0,1).toUpperCase();
+
+  // Hair style index 0-3
+  const hairStyle = n % 4;
+  // Expression: 0=neutral, 1=determined, 2=stern
+  const expr = n % 3;
+
+  const cx = size / 2, cy = size / 2;
+  const fr = size * 0.34;   // face radius
+  const ew = size * 0.07;   // eye width
+  const eh = size * 0.055;  // eye height
+  const eyY = cy - fr * 0.05;
+  const eyLx = cx - fr * 0.32, eyRx = cx + fr * 0.32;
+
+  // Mouth shape by expression
+  const mouthY = cy + fr * 0.38;
+  const mouthW = fr * 0.38;
+  const mouthPath = expr === 0
+    ? `<line x1="${cx-mouthW}" y1="${mouthY}" x2="${cx+mouthW}" y2="${mouthY}" stroke="#000" stroke-width="${size*0.025}" stroke-linecap="round" opacity="0.6"/>`
+    : expr === 1
+    ? `<path d="M${cx-mouthW} ${mouthY} Q${cx} ${mouthY+size*0.04} ${cx+mouthW} ${mouthY}" fill="none" stroke="#000" stroke-width="${size*0.025}" stroke-linecap="round" opacity="0.6"/>`
+    : `<path d="M${cx-mouthW} ${mouthY+size*0.02} Q${cx} ${mouthY-size*0.02} ${cx+mouthW} ${mouthY+size*0.02}" fill="none" stroke="#000" stroke-width="${size*0.025}" stroke-linecap="round" opacity="0.6"/>`;
+
+  // Hair shape by style
+  const hairParts = [
+    // 0: short flat top
+    `<ellipse cx="${cx}" cy="${cy-fr*0.75}" rx="${fr*0.92}" ry="${fr*0.38}" fill="${hairCol}"/>`,
+    // 1: swept back
+    `<ellipse cx="${cx+fr*0.1}" cy="${cy-fr*0.72}" rx="${fr*0.85}" ry="${fr*0.35}" fill="${hairCol}"/>
+     <path d="M${cx+fr*0.5} ${cy-fr*0.4} Q${cx+fr*1.1} ${cy-fr*0.1} ${cx+fr*0.9} ${cy+fr*0.3}" fill="none" stroke="${hairCol}" stroke-width="${size*0.06}"/>`,
+    // 2: cropped sides
+    `<rect x="${cx-fr*0.92}" y="${cy-fr*1.05}" width="${fr*1.84}" height="${fr*0.55}" rx="${fr*0.3}" fill="${hairCol}"/>`,
+    // 3: undercut
+    `<ellipse cx="${cx}" cy="${cy-fr*0.78}" rx="${fr*0.7}" ry="${fr*0.3}" fill="${hairCol}"/>`,
+  ][hairStyle];
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+  <circle cx="${cx}" cy="${cy}" r="${cx}" fill="#0c1a0e"/>
+  <!-- face -->
+  <ellipse cx="${cx}" cy="${cy+fr*0.05}" rx="${fr}" ry="${fr*1.05}" fill="${faceCol}"/>
+  <!-- hair -->
+  ${hairParts}
+  <!-- eyes -->
+  <ellipse cx="${eyLx}" cy="${eyY}" rx="${ew}" ry="${eh}" fill="${eyeCol}" opacity="0.9"/>
+  <ellipse cx="${eyRx}" cy="${eyY}" rx="${ew}" ry="${eh}" fill="${eyeCol}" opacity="0.9"/>
+  <ellipse cx="${eyLx}" cy="${eyY}" rx="${ew*0.5}" ry="${eh*0.7}" fill="#000" opacity="0.5"/>
+  <ellipse cx="${eyRx}" cy="${eyY}" rx="${ew*0.5}" ry="${eh*0.7}" fill="#000" opacity="0.5"/>
+  <!-- mouth -->
+  ${mouthPath}
+  <!-- border ring -->
+  <circle cx="${cx}" cy="${cy}" r="${cx-0.5}" fill="none" stroke="${eyeCol}" stroke-width="1" opacity="0.4"/>
+</svg>`;
+}
+
+// Draw the pilot avatar on the canvas at (cx, cy), radius r
+function drawPilotAvatar(mechX, mechY, radius, pilotName, playerColor) {
+  const size   = Math.round(radius * 2);
+  const svgStr = pilotAvatarSVG(pilotName, size, playerColor);
+  const blob   = new Blob([svgStr], { type: 'image/svg+xml' });
+  const url    = URL.createObjectURL(blob);
+  const img    = new Image();
+  img.onload = () => {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(mechX, mechY, radius, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(img, mechX - radius, mechY - radius, size, size);
+    ctx.restore();
+    URL.revokeObjectURL(url);
+  };
+  img.src = url;
+}
+
 function buildRoster() {
   const list = document.getElementById('mlist');
   list.innerHTML = '';
@@ -3798,38 +3965,58 @@ function buildRoster() {
       });
     }
 
-    // Fire order annotations
-    const myOrder    = fireOrders.find(fo => fo.attacker_id === mech.id);
+    // Fire order annotations — now one line per fire order for this mech
+    const myOrders   = fireOrders.filter(fo => fo.attacker_id === mech.id);
     const isTargeted = !isMine && fireOrders.some(fo => fo.target_id === mech.id);
-    const fireHtml   = myOrder
-      ? `<div class="sr" style="color:#ff6644;margin-top:3px;">
-           <span>FIRE</span>
-           <span>${WEAPONS[myOrder.weapon]?.label ?? myOrder.weapon}
-           → ${mechs.find(m => m.id === myOrder.target_id)?.name ?? '?'}</span>
-         </div>`
-      : '';
+    const fireHtml   = myOrders.map(fo =>
+      '<div class="sr" style="color:#ff6644;margin-top:2px;">' +
+      '<span>FIRE</span>' +
+      '<span>' + (WEAPONS[fo.weapon]?.label ?? fo.weapon) +
+      ' \u2192 ' + (mechs.find(m => m.id === fo.target_id)?.name ?? '?') + '</span>' +
+      '</div>'
+    ).join('');
 
     // Pilot skills display
     const gStr = mech.gunnery ?? 0;
     const pStr = mech.piloting ?? 0;
     const skillColor = (gStr > 0 || pStr > 0) ? 'var(--ph)' : 'var(--dim)';
-    const pilotHtml = `<div class="sr" style="margin-bottom:2px;border-bottom:1px solid var(--bdr);padding-bottom:4px;">
-      <span style="color:${skillColor};letter-spacing:1px;font-size:8px;">${mech.pilotName ?? '—'}</span>
-      <span style="color:${skillColor};font-size:8px;">GUN:${gStr}  PIL:${pStr}</span>
-    </div>`;
+    const pilotHtml = '<div class="sr" style="margin-bottom:2px;border-bottom:1px solid var(--bdr);padding-bottom:4px;">' +
+      '<span style="color:' + skillColor + ';letter-spacing:1px;font-size:8px;">' + (mech.pilotName ?? '\u2014') + '</span>' +
+      '<span style="color:' + skillColor + ';font-size:8px;">GUN:' + gStr + '  PIL:' + pStr + '</span>' +
+      '</div>';
 
-    const inner = `<div class="mn">${mech.name}</div>
-      ${pilotHtml}
-      <div class="ms">
-        <div class="sr"><span>CLASS</span><span class="v">${cls?.label ?? mech.cls}</span></div>
-        <div class="sr"><span>FACING</span><span class="v">${mech.facing}°</span></div>
-        <div class="sr"><span>MP</span><span class="v">${mpLeft}/${mpMax}</span></div>
-        ${pipHtml}${hpHtml}${statusHtml}${fireHtml}
-      </div>`;
+    // Build card HTML — avatar injected via DOM after innerHTML set (avoids data-URL in template)
+    const mechCol = isP1 ? '#00ff88' : '#ff4444';
+    const inner = '<div class="mc-header" style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">' +
+        '<div class="mc-avatar" data-pilot="' + (mech.pilotName ?? '') + '" data-color="' + mechCol + '" data-destroyed="' + (mech.destroyed ? '1' : '0') + '" style="width:28px;height:28px;flex-shrink:0;"></div>' +
+        '<div style="flex:1;min-width:0;">' +
+          '<div class="mn">' + mech.name + '</div>' +
+          pilotHtml +
+        '</div>' +
+      '</div>' +
+      '<div class="ms">' +
+        '<div class="sr"><span>CLASS</span><span class="v">' + (cls?.label ?? mech.cls) + '</span></div>' +
+        '<div class="sr"><span>FACING</span><span class="v">' + mech.facing + '\u00b0</span></div>' +
+        '<div class="sr"><span>MP</span><span class="v">' + mpLeft + '/' + mpMax + '</span></div>' +
+        pipHtml + hpHtml + statusHtml + fireHtml +
+      '</div>';
     const c = document.createElement('div');
     const destroyedCls = mech.destroyed ? 'destroyed' : '';
     c.className = `mc ${isP1?'p1':'p2'} ${isSel?'sel':''} ${isTargeted?'fire-target':''} ${destroyedCls}`.trim();
     c.innerHTML = inner;
+    // Inject pilot avatar image after innerHTML (avoids data-URL in template literal)
+    const avatarSlot = c.querySelector('.mc-avatar');
+    if (avatarSlot) {
+      const pilot   = avatarSlot.dataset.pilot;
+      const color   = avatarSlot.dataset.color;
+      const dimmed  = avatarSlot.dataset.destroyed === '1';
+      const svgStr  = pilotAvatarSVG(pilot, 28, color);
+      const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
+      const img = document.createElement('img');
+      img.src = dataUrl; img.width = 28; img.height = 28;
+      img.style.cssText = 'border-radius:50%;border:1px solid ' + color + ';opacity:' + (dimmed ? '0.3' : '0.9') + ';display:block;';
+      avatarSlot.appendChild(img);
+    }
     if (!isMine || mech.destroyed) { c.style.opacity = mech.destroyed ? '' : '0.35'; c.style.cursor = 'default'; }
     else { c.onclick = () => selMech(mech.id); }
     list.appendChild(c);
@@ -3964,6 +4151,9 @@ canvas.addEventListener('click', e => {
         addLog(`${m.name}: INSUFFICIENT MP (need ${cost}, have ${mpLeft})`, 'bad');
         return;
       }
+      // Save snapshot for undo before applying the move
+      if (!moveHistory[m.id]) moveHistory[m.id] = [];
+      moveHistory[m.id].push({ wx: m.wx, wy: m.wy, mpSpent: m.mpSpent, facing: m.facing });
       m.wx      = hovVert.wx;
       m.wy      = hovVert.wy;
       m.mpSpent += cost;
@@ -4006,44 +4196,55 @@ canvas.addEventListener('click', e => {
       selMech(near.id);
       return;
     }
-    // Clicking an enemy assigns a fire order using the selected weapon
+    // Clicking an enemy assigns a fire order for the selected weapon
     if (!selId) {
       addLog('FIRE: select one of your mechs first', 'bad'); return;
     }
     const attacker = mechs.find(m => m.id === selId);
     if (!attacker || attacker.destroyed || near.destroyed) return;
 
-    // Determine which weapon to use
+    // Must have a weapon selected
     const cls = MECH_CLASSES[attacker.cls];
     let wKey = selectedWeapon;
-
-    // If no weapon explicitly selected, try to find the first valid one (fallback)
     if (!wKey || !cls.weapons.includes(wKey)) {
-      wKey = cls.weapons.find(k => {
-        const w = WEAPONS[k];
-        return w && calcToHit(attacker, near, w) !== null;
-      }) ?? cls.weapons[0];
+      addLog(attacker.name + ': select a weapon first, then click an enemy', 'bad'); return;
     }
 
     // Validate the shot is possible
     const w  = WEAPONS[wKey];
     const tn = calcToHit(attacker, near, w);
     if (tn === null) {
-      addLog(`${attacker.name}: ${w.label} — NO SHOT on ${near.name} (out of range or arc)`, 'bad');
+      addLog(attacker.name + ': ' + w.label + ' \u2014 NO SHOT on ' + near.name + ' (out of range or arc)', 'bad');
       return;
     }
 
-    // Replace any existing order from this attacker
-    fireOrders = fireOrders.filter(fo => fo.attacker_id !== selId);
+    // Replace any existing order for THIS weapon from this attacker (allow different targets per weapon)
+    fireOrders = fireOrders.filter(fo => !(fo.attacker_id === selId && fo.weapon === wKey));
     fireOrders.push({ attacker_id: selId, target_id: near.id, weapon: wKey });
 
-    addLog(`${attacker.name} → ${near.name} : ${w.label}  [TN:${tn}]`, 'ok');
+    addLog(attacker.name + ' \u2192 ' + near.name + ' : ' + w.label + '  [TN:' + tn + ']', 'ok');
     updateWeaponPicker(null);
     buildRoster(); draw();
   }
 });
 canvas.addEventListener('contextmenu', e => {
   e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+  const { x: wx, y: wy } = c2w(cx, cy);
+  const nm = mechs.reduce((b, m) => {
+    const d = Math.hypot(wx - m.wx, wy - m.wy);
+    return (!b || d < b.d) ? { m, d } : b;
+  }, null);
+  const near = nm && nm.d < OUTLINE_R * 0.55 ? nm.m : null;
+
+  // In fire mode: right-click own mech = cancel that weapon's order; right-click anywhere else = deselect
+  if (mode === 'fire' && near && near.player === myPlayer && selectedWeapon) {
+    fireOrders = fireOrders.filter(fo => !(fo.attacker_id === near.id && fo.weapon === selectedWeapon));
+    addLog(near.name + ': ' + (WEAPONS[selectedWeapon]?.label ?? selectedWeapon) + ' order cancelled');
+    updateWeaponPicker(null); buildRoster(); draw();
+    return;
+  }
   selId = null;
   updatePanel(); buildRoster(); draw();
 });
