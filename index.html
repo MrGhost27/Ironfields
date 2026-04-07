@@ -1733,6 +1733,81 @@ async function resolveTurn(plans) {
     });
   });
 
+  // 1b. Collision detection — post-movement pass
+  // A collision occurs when a P1 and P2 mech end within 1 hex of each other
+  // and both moved this turn. Damage scales with MP spent; lighter mech is displaced.
+  {
+    const CLASS_WEIGHT = { scout: 1, medium: 2, heavy: 3 };
+    const collisionLines = [];
+
+    const p1active = mechs.filter(m => m.player === 1 && !m.destroyed);
+    const p2active = mechs.filter(m => m.player === 2 && !m.destroyed);
+
+    p1active.forEach(a => {
+      p2active.forEach(b => {
+        if (hexDist(a, b) > 1) return;           // not close enough
+        if (!a.mpSpentLastTurn && !b.mpSpentLastTurn) return;  // neither moved
+
+        collisionLines.push(`⚠ COLLISION — ${a.name} and ${b.name}`);
+
+        // Determine attacker (spent more MP) and defender
+        const [faster, slower] = a.mpSpentLastTurn >= b.mpSpentLastTurn ? [a, b] : [b, a];
+
+        // Damage = floor(combined speed / 3), minimum 1
+        const combinedMp  = (a.mpSpentLastTurn ?? 0) + (b.mpSpentLastTurn ?? 0);
+        const fullDamage  = Math.max(1, Math.floor(combinedMp / 3));
+        const halfDamage  = Math.max(1, Math.floor(fullDamage / 2));
+
+        // Apply full damage to slower, half to faster — random locations
+        const locFull = HIT_LOC[roll3d6().total];
+        const locHalf = HIT_LOC[roll3d6().total];
+
+        collisionLines.push(`  ${slower.name} takes ${fullDamage} dmg (${LOC_LABEL[locFull] ?? locFull}):`);
+        applyDamage(slower, locFull, fullDamage).forEach(l => collisionLines.push(`    └ ${l}`));
+
+        collisionLines.push(`  ${faster.name} takes ${halfDamage} dmg (${LOC_LABEL[locHalf] ?? locHalf}):`);
+        applyDamage(faster, locHalf, halfDamage).forEach(l => collisionLines.push(`    └ ${l}`));
+
+        // Displace the lighter mech one hex away from the heavier
+        const heavierWeight = CLASS_WEIGHT[faster.cls] ?? 2;
+        const lighterWeight = CLASS_WEIGHT[slower.cls]  ?? 2;
+        const [heavy, light] = heavierWeight >= lighterWeight ? [faster, slower] : [slower, faster];
+
+        // Push light mech one hex-radius away from heavy mech
+        const pushDx = light.wx - heavy.wx;
+        const pushDy = light.wy - heavy.wy;
+        const pushLen = Math.hypot(pushDx, pushDy) || 1;
+        const pushWx  = light.wx + (pushDx / pushLen) * HS * 1.5;
+        const pushWy  = light.wy + (pushDy / pushLen) * HS * 1.5;
+        const snapped = snapToVert(pushWx, pushWy);
+        if (snapped) {
+          light.wx = snapped.wx;
+          light.wy = snapped.wy;
+          collisionLines.push(`  ${light.name} displaced away from ${heavy.name}`);
+        }
+      });
+    });
+
+    if (collisionLines.length > 0) {
+      addLog('── COLLISIONS ──', 'ok');
+      collisionLines.forEach(l => addLog(l, l.includes('ELIMINATED') ? 'bad' : l.startsWith('⚠') ? 'ok' : ''));
+
+      // Check if collisions ended the game before combat even fires
+      const p1c = mechs.filter(m => m.player === 1 && !m.destroyed).length;
+      const p2c = mechs.filter(m => m.player === 2 && !m.destroyed).length;
+      if (p1c === 0 || p2c === 0) {
+        const winner = p1c > 0 ? 1 : 2;
+        addLog(`══ PLAYER ${winner} WINS — ALL ENEMY MECHS ELIMINATED ══`, 'ok');
+        const finalState = captureState();
+        await db.from('ironfield_games').update({ status: 'complete', state: finalState }).eq('id', gameId);
+        isResolving = false;
+        buildRoster(); updatePanel(); draw();
+        showVictory(winner, finalState);
+        return;
+      }
+    }
+  }
+
   // 2. Resolve combat — collect all fire orders from both plans
   const allFireOrders = [];
   plans.forEach(row => {
