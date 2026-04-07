@@ -643,6 +643,7 @@
 
     <div class="wait-status" id="wait-status"></div>
     <button class="auth-btn" id="btn-start" onclick="doStartGame()" disabled>START GAME</button>
+    <button class="auth-btn" id="btn-start-ai" onclick="doStartVsAI()" style="background:rgba(136,170,255,0.10);border-color:#334488;color:#88aaff;">START VS AI</button>
     <button class="auth-btn sec" onclick="leaveWaiting()">LEAVE LOBBY</button>
   </div>
 </div>
@@ -775,6 +776,7 @@ let myPlanId       = null;   // id of my submitted turn_plan row
 let myPlanSubmitted = false;
 let enemyPlanSubmitted = false;
 let syncTimer      = null;
+let vsAiMode       = false;  // true = P2 is a synthetic AI opponent (no second human needed)
 
 // ── SCREEN HELPERS ────────────────────────────────────────────────
 function showScreen(id) {
@@ -1189,7 +1191,9 @@ async function renderWaiting() {
 
   // Show/hide Start button based on isHost
   const btnStart = document.getElementById('btn-start');
-  btnStart.style.display = isHost ? 'block' : 'none';
+  const btnStartAI = document.getElementById('btn-start-ai');
+  btnStart.style.display   = isHost ? 'block' : 'none';
+  btnStartAI.style.display = isHost ? 'block' : 'none';
   document.getElementById('wait-title').textContent =
     isHost ? '// WAITING FOR OPPONENT' : '// JOINED — WAITING TO START';
 
@@ -1353,6 +1357,153 @@ async function doStartGame() {
   startStateCache = startState;  // ensure host has state on enterGame
   enterGame();
   await logEvent('start');
+}
+
+// ── VS AI — start without a second human player ───────────────────
+async function doStartVsAI() {
+  if (!isHost) { addLog('Only the host can start VS AI.', 'bad'); return; }
+  showSync('Starting VS AI…');
+
+  // Claim both seats so the game can start (host = P1, AI = P2)
+  const { data: g0 } = await db.from('ironfield_games').select('*').eq('id', gameId).single();
+  if (!g0) { showSyncErr(); return; }
+
+  // Auto-assign P1 to host if not already claimed
+  const updates = {};
+  if (!g0.p1_id) updates.p1_id = currentUser.id;
+  if (!g0.p2_id) updates.p2_id = currentUser.id;  // AI occupies P2 slot with host's uid (harmless)
+
+  if (Object.keys(updates).length) {
+    await db.from('ironfield_games').update(updates).eq('id', gameId);
+  }
+
+  // Ensure we are P1 and re-read lance picks
+  myPlayer = 1;
+  const { data: gPre } = await db.from('ironfield_games').select('state').eq('id', gameId).single();
+  if (gPre?.state?.lancePicks?.p1) lancePicksP1 = gPre.state.lancePicks.p1;
+  // AI picks a balanced lance within budget if none set
+  if (!lancePicksP2 || lancePicksP2.length === 0) lancePicksP2 = ['medium','medium','heavy'];
+
+  const startState = buildStartState();
+  const { error } = await db.from('ironfield_games')
+    .update({ status: 'active', phase: 'planning', state: startState,
+              p1_id: currentUser.id, p2_id: currentUser.id })
+    .eq('id', gameId);
+  if (error) { showSyncErr(); return; }
+
+  isHost   = true;
+  vsAiMode = true;
+  showSynced();
+  startStateCache = startState;
+  enterGame();
+  addLog('VS AI MODE — you are Player 1. The AI controls Player 2.', 'ok');
+  await logEvent('start');
+}
+
+// ── AI PLAN GENERATOR ─────────────────────────────────────────────
+// Returns a plan object identical in shape to what submitPlan() writes to DB.
+// This function is the only place AI logic lives — it never touches resolveTurn
+// or any game state directly. It just reads the current mechs array and returns
+// a plan blob that the normal submission pipeline will handle.
+function aiGeneratePlan() {
+  const myMechs  = mechs.filter(m => m.player === 2 && !m.destroyed && !m.shutDown);
+  const enemies  = mechs.filter(m => m.player === 1 && !m.destroyed);
+
+  const mechOrders = [];
+  const fireOrds   = [];
+
+  myMechs.forEach(m => {
+    // ── MOVEMENT: move toward closest enemy, stop at best weapon range ──
+    const mpAvail = mechMpMax(m);
+    const cls     = MECH_CLASSES[m.cls];
+    const weapons = (cls?.weapons ?? []).filter(wk => !mechWeaponDisabled(m, wk));
+
+    // Find closest enemy
+    const closest = enemies.reduce((best, e) => {
+      const d = hexDist(m, e);
+      return (!best || d < best.d) ? { mech: e, d } : best;
+    }, null);
+
+    let destWx = m.wx, destWy = m.wy, mpSpent = 0;
+    let bestFacing = m.facing;
+
+    if (closest) {
+      const target = closest.mech;
+      // Preferred range: shortest max range of available weapons, clamped above 3
+      const prefRange = weapons.length > 0
+        ? Math.max(3, Math.min(...weapons.map(wk => WEAPONS[wk]?.range ?? 99)))
+        : 5;
+
+      const currentDist = hexDist(m, target);
+
+      // Face the enemy regardless of movement
+      const canvasBearing = Math.atan2(target.wy - m.wy, target.wx - m.wx) * 180 / Math.PI;
+      bestFacing = ((Math.round((canvasBearing + 90) / 30) * 30) % 360 + 360) % 360;
+
+      if (currentDist > prefRange) {
+        // Step toward enemy along vertex graph, spending up to mpAvail
+        let wx = m.wx, wy = m.wy, spent = 0;
+        const path = astar(m.wx, m.wy, target.wx, target.wy);
+        if (path && path.length > 1) {
+          for (let step = 1; step < path.length; step++) {
+            const vk   = path[step];
+            const vPos = vertByKey.get(vk);
+            if (!vPos) break;
+            const midWx = (wx + vPos.wx) / 2, midWy = (wy + vPos.wy) / 2;
+            const cost   = terrainMpCost(midWx, midWy);
+            if (spent + cost > mpAvail) break;
+            // Don't step into the same hex as another mech
+            const blocked = mechs.some(other =>
+              other.id !== m.id && !other.destroyed &&
+              Math.hypot(other.wx - vPos.wx, other.wy - vPos.wy) < HS * 0.8
+            );
+            if (blocked) break;
+            wx    = vPos.wx; wy = vPos.wy; spent += cost;
+            // Stop when we reach preferred range
+            const newDist = hexDist({ wx, wy }, target);
+            if (newDist <= prefRange) break;
+          }
+          destWx = wx; destWy = wy; mpSpent = spent;
+        }
+      }
+    }
+
+    mechOrders.push({
+      mech_id:      m.id,
+      wx:           destWx,
+      wy:           destWy,
+      final_facing: bestFacing,
+      mp_spent:     mpSpent
+    });
+
+    // ── FIRE: pick best weapon with a valid shot at closest enemy ──
+    if (closest) {
+      const target = closest.mech;
+      // Temporarily update facing/position so calcToHit sees the new planned state
+      const origWx = m.wx, origWy = m.wy, origF = m.facing, origMp = m.mpSpent;
+      m.wx = destWx; m.wy = destWy; m.facing = bestFacing; m.mpSpent = mpSpent;
+
+      let bestWeapon = null, bestTN = 99;
+      weapons.forEach(wk => {
+        const w  = WEAPONS[wk];
+        const tn = calcToHit(m, target, w);
+        if (tn !== null && tn < bestTN) { bestTN = tn; bestWeapon = wk; }
+      });
+
+      // Restore original state
+      m.wx = origWx; m.wy = origWy; m.facing = origF; m.mpSpent = origMp;
+
+      if (bestWeapon) {
+        fireOrds.push({ attacker_id: m.id, target_id: target.id, weapon: bestWeapon });
+      }
+    }
+  });
+
+  return {
+    submitted_at: new Date().toISOString(),
+    mech_orders:  mechOrders,
+    fire_orders:  fireOrds
+  };
 }
 
 async function leaveWaiting() {
@@ -1529,6 +1680,21 @@ async function submitPlan() {
   showSynced();
   await logEvent('plan_submitted');
   updatePlanBar();
+
+  // VS AI: generate and submit the AI's plan immediately after the human submits
+  if (vsAiMode) {
+    addLog('— AI generating plan… —', 'ok');
+    const aiPlan = aiGeneratePlan();
+    // Use a stable fake profile id for the AI so checkBothPlansSubmitted sees two plans
+    const aiProfileId = 'ai-player-2';
+    await db.from('ironfield_turn_plans')
+      .upsert({ game_id: gameId, profile_id: aiProfileId,
+                turn_number: turnNumber, plan: aiPlan },
+               { onConflict: 'game_id,profile_id,turn_number' });
+    enemyPlanSubmitted = true;
+    updatePlanBar();
+  }
+
   await checkBothPlansSubmitted();
 }
 
@@ -1899,6 +2065,7 @@ function resetMultiState() {
   realtimeChan = null;
   turnNumber = 1;
   startStateCache = null;
+  vsAiMode = false;
   lancePicksP1 = ['medium', 'medium', 'heavy'];
   lancePicksP2 = ['medium', 'medium', 'heavy'];
   terrainTiles   = {};
