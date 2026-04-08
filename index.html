@@ -2699,9 +2699,21 @@ const MECH_CLASSES = {
     baseArmour:    { head:2, ct:6,  lt:4,  rt:4,  la:3,  ra:3,  ll:4,  rl:4  },
     baseStructure: { head:1, ct:3,  lt:2,  rt:2,  la:1,  ra:1,  ll:2,  rl:2  },
   },
+  striker: {
+    label:'STRIKER', mpMax:20, heatCap:16, color:'#aaffdd',
+    weapons: ['laser_light', 'laser_light_b'],
+    baseArmour:    { head:2, ct:5,  lt:3,  rt:3,  la:2,  ra:2,  ll:3,  rl:3  },
+    baseStructure: { head:1, ct:2,  lt:2,  rt:2,  la:1,  ra:1,  ll:2,  rl:2  },
+  },
   medium: {
     label:'MEDIUM', mpMax:12, heatCap:24, color:'#00ff88',
     weapons: ['laser_medium', 'ballistic_ac5'],
+    baseArmour:    { head:3, ct:10, lt:8,  rt:8,  la:6,  ra:6,  ll:7,  rl:7  },
+    baseStructure: { head:1, ct:5,  lt:4,  rt:4,  la:3,  ra:3,  ll:4,  rl:4  },
+  },
+  electronic: {
+    label:'ELECTRONIC', mpMax:10, heatCap:22, color:'#88aaff',
+    weapons: ['laser_light', 'ecm_suite'],
     baseArmour:    { head:3, ct:10, lt:8,  rt:8,  la:6,  ra:6,  ll:7,  rl:7  },
     baseStructure: { head:1, ct:5,  lt:4,  rt:4,  la:3,  ra:3,  ll:4,  rl:4  },
   },
@@ -2710,6 +2722,24 @@ const MECH_CLASSES = {
     weapons: ['laser_large', 'ballistic_ac10', 'missile_lrm5'],
     baseArmour:    { head:3, ct:16, lt:12, rt:12, la:10, ra:10, ll:11, rl:11 },
     baseStructure: { head:1, ct:8,  lt:6,  rt:6,  la:5,  ra:5,  ll:7,  rl:7  },
+  },
+  brawler: {
+    label:'BRAWLER', mpMax:6, heatCap:30, color:'#ffaa44',
+    weapons: ['ballistic_ac10', 'missile_srm6', 'laser_medium'],
+    baseArmour:    { head:3, ct:16, lt:12, rt:12, la:10, ra:10, ll:11, rl:11 },
+    baseStructure: { head:1, ct:8,  lt:6,  rt:6,  la:5,  ra:5,  ll:7,  rl:7  },
+  },
+  firesupport: {
+    label:'FIRE SUP', mpMax:5, heatCap:28, color:'#ffff66',
+    weapons: ['missile_lrm15', 'missile_lrm15_b'],
+    baseArmour:    { head:3, ct:14, lt:10, rt:10, la:8,  ra:8,  ll:10, rl:10 },
+    baseStructure: { head:1, ct:7,  lt:5,  rt:5,  la:4,  ra:4,  ll:6,  rl:6  },
+  },
+  assault: {
+    label:'ASSAULT', mpMax:4, heatCap:36, color:'#ff6644',
+    weapons: ['ballistic_ac20', 'missile_lrm10'],
+    baseArmour:    { head:4, ct:22, lt:18, rt:18, la:14, ra:14, ll:16, rl:16 },
+    baseStructure: { head:1, ct:11, lt:8,  rt:8,  la:6,  ra:6,  ll:9,  rl:9  },
   },
 };
 
@@ -2724,15 +2754,40 @@ const LANCE_CHASSIS = {
     cost:3, cls:'scout',
     desc:'Fast skirmisher — LT LASER + SRM-2  ·  18 MP',
   },
+  striker: {
+    key:'striker', label:'LANCE-SK', fullLabel:'LANCE-SK  /  STRIKER',
+    cost:4, cls:'striker',
+    desc:'Speed raider — dual LT LASER  ·  20 MP  ·  Fragile',
+  },
   medium: {
     key:'medium', label:'LANCE-M', fullLabel:'LANCE-M  /  MEDIUM',
     cost:5, cls:'medium',
     desc:'All-rounder — MD LASER + AC/5  ·  12 MP',
   },
+  electronic: {
+    key:'electronic', label:'LANCE-E', fullLabel:'LANCE-E  /  ELECTRONIC',
+    cost:6, cls:'electronic',
+    desc:'ECM platform — LT LASER + ECM  ·  10 MP  ·  Jams missile locks within 3 hexes',
+  },
   heavy: {
     key:'heavy', label:'LANCE-H', fullLabel:'LANCE-H  /  HEAVY',
     cost:8, cls:'heavy',
     desc:'Fire platform — LG LASER + AC/10 + LRM-5  ·  6 MP',
+  },
+  brawler: {
+    key:'brawler', label:'LANCE-B', fullLabel:'LANCE-B  /  BRAWLER',
+    cost:9, cls:'brawler',
+    desc:'Close quarters — AC/10 + SRM-6 + MD LASER  ·  6 MP',
+  },
+  firesupport: {
+    key:'firesupport', label:'LANCE-F', fullLabel:'LANCE-F  /  FIRE SUPPORT',
+    cost:9, cls:'firesupport',
+    desc:'Long range only — dual LRM-15  ·  5 MP',
+  },
+  assault: {
+    key:'assault', label:'LANCE-A', fullLabel:'LANCE-A  /  ASSAULT',
+    cost:12, cls:'assault',
+    desc:'Siege unit — AC/20 + LRM-10  ·  4 MP  ·  Heaviest armour',
   },
 };
 const LANCE_BUDGET = 20;     // point budget per player
@@ -2754,13 +2809,33 @@ let lancePicksP2 = ['medium', 'medium', 'heavy'];
 // mountedIn:  mech location key where this weapon is physically housed
 //             'ra'=right arm  'la'=left arm  'ct'=centre torso
 const WEAPONS = {
-  laser_light:    { label:'LT LASER', type:'laser',     range: 6, damage: 3, tn:10, heat:2, mountedIn:'ra' },
-  laser_medium:   { label:'MD LASER', type:'laser',     range: 9, damage: 5, tn:10, heat:4, mountedIn:'ra' },
-  laser_large:    { label:'LG LASER', type:'laser',     range:14, damage: 8, tn:10, heat:8, mountedIn:'ra' },
-  ballistic_ac5:  { label:'AC/5',     type:'ballistic', range:10, damage: 5, tn:10, heat:1, mountedIn:'la' },
-  ballistic_ac10: { label:'AC/10',    type:'ballistic', range: 7, damage:10, tn:10, heat:2, mountedIn:'la' },
-  missile_srm2:   { label:'SRM-2',    type:'missile',   range: 6, damage: 4, tn:10, heat:2, salvo:2, mountedIn:'la' },
-  missile_lrm5:   { label:'LRM-5',    type:'missile',   range:18, damage: 5, tn:10, heat:2, salvo:5, mountedIn:'ct' },
+  // ── Existing weapons ──────────────────────────────────────────────
+  laser_light:      { label:'LT LASER',   type:'laser',     range: 6, damage: 3, tn:10, heat:2, mountedIn:'ra' },
+  laser_light_b:    { label:'LT LASER B', type:'laser',     range: 6, damage: 3, tn:10, heat:2, mountedIn:'la' },  // striker second gun
+  laser_medium:     { label:'MD LASER',   type:'laser',     range: 9, damage: 5, tn:10, heat:4, mountedIn:'ra' },
+  laser_large:      { label:'LG LASER',   type:'laser',     range:14, damage: 8, tn:10, heat:8, mountedIn:'ra' },
+  ballistic_ac5:    { label:'AC/5',       type:'ballistic', range:10, damage: 5, tn:10, heat:1, mountedIn:'la' },
+  ballistic_ac10:   { label:'AC/10',      type:'ballistic', range: 7, damage:10, tn:10, heat:2, mountedIn:'la' },
+  missile_srm2:     { label:'SRM-2',      type:'missile',   range: 6, damage: 4, tn:10, heat:2, salvo:2, mountedIn:'la' },
+  missile_lrm5:     { label:'LRM-5',      type:'missile',   range:18, damage: 5, tn:10, heat:2, salvo:5, mountedIn:'ct' },
+  // ── New weapons (Tier 3.2) ─────────────────────────────────────────
+  laser_pulse:      { label:'PULSE LAS',  type:'laser_pulse', range: 7, damage: 3, tn:10, heat:4, mountedIn:'ra',
+                      special:'Fires twice — second shot at +1 TN' },
+  ballistic_ac20:   { label:'AC/20',      type:'ballistic', range: 4, damage:20, tn:10, heat:10, mountedIn:'la',
+                      ammoExplosion:true, special:'Devastating CQB — ammo explosion risk on CT destroy' },
+  ballistic_gauss:  { label:'GAUSS',      type:'ballistic', range:15, damage:15, tn:10, heat:0,  mountedIn:'la',
+                      ammoExplosion:true, special:'No heat — ammo explosion risk on CT destroy' },
+  missile_srm6:     { label:'SRM-6',      type:'missile',   range: 6, damage:12, tn:10, heat:4, salvo:6, mountedIn:'la' },
+  missile_lrm10:    { label:'LRM-10',     type:'missile',   range:21, damage:10, tn:10, heat:4, salvo:10, mountedIn:'ct',
+                      indirect:true, special:'Indirect fire capable' },
+  missile_lrm15:    { label:'LRM-15',     type:'missile',   range:21, damage:15, tn:10, heat:6, salvo:15, mountedIn:'ct',
+                      indirect:true, special:'Indirect fire capable' },
+  missile_lrm15_b:  { label:'LRM-15 B',   type:'missile',   range:21, damage:15, tn:10, heat:6, salvo:15, mountedIn:'lt',
+                      indirect:true, special:'Second LRM rack (Fire Support)' },
+  ecm_suite:        { label:'ECM',        type:'ecm',       range: 0, damage: 0, tn:10, heat:0, mountedIn:'ct',
+                      special:'+2 TN on missile locks within 3 hexes of this mech' },
+  flamer:           { label:'FLAMER',     type:'flamer',    range: 3, damage: 2, tn:10, heat:3, mountedIn:'ra',
+                      targetHeat:3, special:'Adds 3 heat to target each hit' },
 };
 
 let mechs = [];  // populated by loadStateFromGame() on enterGame
@@ -2864,6 +2939,9 @@ function calcToHit(attacker, target, weapon) {
   // Shut down mechs cannot fire
   if (mechShutDown(attacker)) return null;
 
+  // ECM is passive — no direct fire
+  if (weapon.type === 'ecm') return null;
+
   // Weapon disabled (mount location destroyed)
   const weaponKey = Object.keys(WEAPONS).find(k => WEAPONS[k] === weapon);
   if (weaponKey && mechWeaponDisabled(attacker, weaponKey)) return null;
@@ -2937,6 +3015,17 @@ function calcToHit(attacker, target, weapon) {
 
   // Terrain cover — target in woods/rubble/ruin is harder to hit
   tn += terrainCoverTN(target);
+
+  // ECM penalty — any enemy ECM carrier within 3 hexes of the target adds +2 TN to missile locks
+  if (weapon.type === 'missile') {
+    const ecmCarriers = mechs.filter(m =>
+      m.player !== attacker.player &&
+      !m.destroyed &&
+      MECH_CLASSES[m.cls]?.weapons?.includes('ecm_suite')
+    );
+    const ecmJammed = ecmCarriers.some(e => hexDist(e, target) <= 3);
+    if (ecmJammed) tn += 2;
+  }
 
   return Math.max(3, Math.min(18, tn));
 }
@@ -3024,7 +3113,7 @@ function resolveFire(attacker, target, weaponKey) {
   const lines = [];
   const header = `${attacker.name} fires ${weapon.label} at ${target.name} [TN:${tn}]`;
 
-  if (weapon.type === 'laser') {
+  if (weapon.type === 'laser' || weapon.type === 'laser_pulse') {
     const roll = roll3d6();
     const hit  = roll.total >= tn;
     lines.push(`${header} — rolled ${roll.total}${roll.doubles?'*':''} → ${hit?'HIT':'MISS'}`);
@@ -3035,6 +3124,17 @@ function resolveFire(attacker, target, weaponKey) {
       applyDamage(target, loc, dmg).forEach((l, i) =>
         lines.push(`  ${i===0?'└':'  '} ${l}${i===0?extra:''}`)
       );
+      // Ammo explosion check (not applicable to lasers — included for symmetry guard)
+    }
+    // Pulse laser fires a second shot at +1 TN
+    if (weapon.type === 'laser_pulse') {
+      const roll2 = roll3d6();
+      const hit2  = roll2.total >= (tn + 1);
+      lines.push(`  └ PULSE 2nd shot [TN:${tn+1}] — rolled ${roll2.total} → ${hit2?'HIT':'MISS'}`);
+      if (hit2) {
+        const loc2 = HIT_LOC[roll3d6().total];
+        applyDamage(target, loc2, weapon.damage).forEach(l => lines.push(`    └ ${l}`));
+      }
     }
 
   } else if (weapon.type === 'ballistic') {
@@ -3044,9 +3144,21 @@ function resolveFire(attacker, target, weaponKey) {
     if (hit) {
       const loc         = HIT_LOC[roll3d6().total];
       const penetrating = roll.doubles;
-      applyDamage(target, loc, weapon.damage, penetrating).forEach((l, i) =>
-        lines.push(`  ${i===0?'└':'  '} ${l}`)
-      );
+      const dmgLines    = applyDamage(target, loc, weapon.damage, penetrating);
+      dmgLines.forEach((l, i) => lines.push(`  ${i===0?'└':'  '} ${l}`));
+
+      // Ammo explosion: if CT was just destroyed on a mech carrying an ammo weapon
+      if (weapon.ammoExplosion && target.destroyed && loc === 'ct') {
+        const explDmg = Math.ceil(weapon.damage / 2);
+        const explLoc = HIT_LOC[roll3d6().total];
+        lines.push(`  ⚠ AMMO EXPLOSION — ${target.name} detonates! +${explDmg} to ${LOC_LABEL[explLoc] ?? explLoc}`);
+        // Splash to nearest other mech (same or enemy)
+        const others = mechs.filter(m => m.id !== target.id && !m.destroyed && hexDist(m, target) <= 2);
+        if (others.length > 0) {
+          const closest = others.reduce((b, m) => hexDist(m, target) < hexDist(b, target) ? m : b);
+          applyDamage(closest, explLoc, explDmg).forEach(l => lines.push(`    └ splash → ${closest.name}: ${l}`));
+        }
+      }
     }
 
   } else if (weapon.type === 'missile') {
@@ -3055,7 +3167,7 @@ function resolveFire(attacker, target, weaponKey) {
     lines.push(`${header} — lock roll ${lockRoll.total}${lockRoll.doubles?'*':''} → ${locked?'LOCKED':'NO LOCK'}`);
     if (locked) {
       const guided = lockRoll.doubles;
-      const hits   = guided ? weapon.salvo : Math.min(Math.ceil(Math.random() * 6), weapon.salvo);
+      const hits   = guided ? weapon.salvo : Math.min(Math.ceil(Math.random() * weapon.salvo), weapon.salvo);
       lines.push(`  └ ${hits}/${weapon.salvo} missiles ${guided?'(guided — all same loc)':''}`);
       const dmgPerMissile = Math.ceil(weapon.damage / weapon.salvo);
       if (guided) {
@@ -3070,6 +3182,25 @@ function resolveFire(attacker, target, weaponKey) {
         }
       }
     }
+
+  } else if (weapon.type === 'flamer') {
+    const roll = roll3d6();
+    const hit  = roll.total >= tn;
+    lines.push(`${header} — rolled ${roll.total} → ${hit?'HIT':'MISS'}`);
+    if (hit) {
+      const loc = HIT_LOC[roll3d6().total];
+      applyDamage(target, loc, weapon.damage).forEach((l, i) =>
+        lines.push(`  ${i===0?'└':'  '} ${l}`)
+      );
+      // Flamer adds heat to the target
+      if (!target.heatThisTurn) target.heatThisTurn = 0;
+      target.heatThisTurn += weapon.targetHeat ?? 3;
+      lines.push(`  └ FLAMER — +${weapon.targetHeat ?? 3} heat added to ${target.name}`);
+    }
+
+  } else if (weapon.type === 'ecm') {
+    // ECM has no direct fire effect — it's passive (handled in calcToHit)
+    lines.push(`${attacker.name}: ECM active — missile lock penalty applied to nearby enemies`);
   }
 
   return lines;
@@ -3836,6 +3967,16 @@ function updateWeaponPicker(hovEnemy) {
   cls.weapons.forEach(wKey => {
     const w = WEAPONS[wKey];
     if (!w) return;
+
+    // ECM is passive — show as a status badge, not a fire button
+    if (w.type === 'ecm') {
+      const badge = document.createElement('div');
+      badge.style.cssText = 'font-size:9px;color:#88aaff;padding:4px 0 2px;letter-spacing:1px;border-bottom:1px solid var(--bdr);';
+      badge.textContent = '⊕ ECM ACTIVE — missile lock +2 TN within 3 hexes';
+      btnsEl.appendChild(badge);
+      return;
+    }
+
     const disabled    = mechWeaponDisabled(attacker, wKey);
     const thisOrder   = fireOrders.find(fo => fo.attacker_id === attacker.id && fo.weapon === wKey);
     const assignedTgt = thisOrder ? mechs.find(m => m.id === thisOrder.target_id) : null;
@@ -3859,15 +4000,23 @@ function updateWeaponPicker(hovEnemy) {
     }
 
     const mountLabel = w.mountedIn ? ' [' + w.mountedIn.toUpperCase() + ']' : '';
-    const rangeLabel = disabled
-      ? 'mount destroyed' + mountLabel
-      : 'RNG:' + w.range + '  DMG:' + w.damage + (w.salvo ? '  SLV:' + w.salvo : '') + '  HT:' + (w.heat ?? 0);
+    let rangeLabel;
+    if (disabled) {
+      rangeLabel = 'mount destroyed' + mountLabel;
+    } else if (w.type === 'flamer') {
+      rangeLabel = 'RNG:' + w.range + '  DMG:' + w.damage + '+' + (w.targetHeat??3) + 'ht  HT:' + (w.heat ?? 0);
+    } else if (w.type === 'laser_pulse') {
+      rangeLabel = 'RNG:' + w.range + '  DMG:' + w.damage + '×2  HT:' + (w.heat ?? 0);
+    } else {
+      rangeLabel = 'RNG:' + w.range + '  DMG:' + w.damage + (w.salvo ? '  SLV:' + w.salvo : '') + '  HT:' + (w.heat ?? 0);
+    }
 
+    const typeLabel = w.type === 'laser_pulse' ? 'LASER' : w.type.toUpperCase();
     btn.innerHTML =
       '<span class="wlabel">' + w.label +
         (tnStr ? '<span class="wtn ' + tnCls + '">' + tnStr + '</span>' : '') +
       '</span>' +
-      '<span class="wstats">' + (disabled ? '' : w.type.toUpperCase() + '  ') + rangeLabel + '</span>';
+      '<span class="wstats">' + (disabled ? '' : typeLabel + '  ') + rangeLabel + '</span>';
 
     if (!disabled) {
       btn.onclick = () => {
@@ -4196,6 +4345,10 @@ function buildRoster() {
     if (mech.legDestroyed) {
       statusHtml += `<div class="sr" style="color:var(--red);margin-top:2px;font-size:8px;">
         <span>⚠ LEG</span><span>MOVEMENT HALVED</span></div>`;
+    }
+    if (cls2?.weapons?.includes('ecm_suite') && !mech.destroyed) {
+      statusHtml += `<div class="sr" style="color:#88aaff;margin-top:2px;font-size:8px;">
+        <span>⊕ ECM</span><span>ACTIVE</span></div>`;
     }
     if (mech.disabledLocs && mech.disabledLocs.length > 0) {
       cls2?.weapons.forEach(wk => {
