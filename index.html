@@ -678,6 +678,7 @@
     <div id="hPhase"><span class="blink">●</span> <b>PLANNING</b></div>
   </div>
   <div class="userbar">
+    <span style="color:var(--dim);font-size:8px;letter-spacing:1px;opacity:0.6;" title="Build version">v2.6</span>
     <span>PILOT: <b id="hUser">—</b></span>
     <button class="auth-btn sec" style="padding:3px 8px;font-size:8px;" onclick="returnToLobby()">LOBBY</button>
     <button class="auth-btn sec" style="padding:3px 8px;font-size:8px;color:var(--red);border-color:rgba(255,68,68,0.4);" onclick="confirmEndGame()">END GAME</button>
@@ -982,7 +983,10 @@ function openWaiting() {
   showScreen('scr-waiting');
 }
 
-function buildLanceBuilderUI() {
+let _lanceUIBusy = false;  // suppress realtime-triggered rebuilds during user interaction
+
+function buildLanceBuilderUI(force = false) {
+  if (_lanceUIBusy && !force) return;  // don't stomp an in-progress interaction
   const container = document.getElementById('lb-slots');
   if (!container) return;
   container.innerHTML = '';
@@ -1004,13 +1008,14 @@ function buildLanceBuilderUI() {
   addBtn.disabled = myPicks.length >= LANCE_MAX || lanceCost(myPicks) >= LANCE_BUDGET;
   addBtn.onclick = () => {
     if (myPicks.length >= LANCE_MAX) return;
+    _lanceUIBusy = true;
     // Pick the cheapest chassis that fits remaining budget
     const remaining = LANCE_BUDGET - lanceCost(myPicks);
     const cheapest = Object.values(LANCE_CHASSIS).find(ch => ch.cost <= remaining)
                   ?? Object.values(LANCE_CHASSIS)[0];
     myPicks.push(cheapest.key);
-    buildLanceBuilderUI();
-    saveLancePicks();
+    buildLanceBuilderUI(true);
+    saveLancePicks().finally(() => { _lanceUIBusy = false; });
   };
   addRow.appendChild(addBtn);
   container.appendChild(addRow);
@@ -1041,14 +1046,15 @@ function makeLanceSlotRow(i, chassis, myPicks) {
     sel.appendChild(opt);
   });
   sel.addEventListener('change', () => {
+    _lanceUIBusy = true;
     myPicks[i] = sel.value;
     const costEl = document.getElementById(`lb-cost-${i}`);
     if (costEl) costEl.textContent = LANCE_CHASSIS[sel.value]?.cost ?? '?';
     updateLanceBudgetDisplay();
     updateLanceDesc(sel.value);
-    // Refresh add button disabled state
-    buildLanceBuilderUI();
-    saveLancePicks();
+    // Rebuild to refresh add/remove button states, then save
+    buildLanceBuilderUI(true);
+    saveLancePicks().finally(() => { _lanceUIBusy = false; });
   });
   sel.addEventListener('focus', () => updateLanceDesc(sel.value));
 
@@ -1073,9 +1079,10 @@ function makeLanceSlotRow(i, chassis, myPicks) {
     removeBtn.onmouseenter = () => { removeBtn.style.color='var(--red)'; removeBtn.style.borderColor='var(--red)'; };
     removeBtn.onmouseleave = () => { removeBtn.style.color='var(--dim)'; removeBtn.style.borderColor='var(--bdr)'; };
     removeBtn.onclick = () => {
+      _lanceUIBusy = true;
       myPicks.splice(i, 1);
-      buildLanceBuilderUI();
-      saveLancePicks();
+      buildLanceBuilderUI(true);
+      saveLancePicks().finally(() => { _lanceUIBusy = false; });
     };
   }
 
@@ -1707,8 +1714,8 @@ async function submitPlan() {
       fire_orders: fireOrders.filter(fo => myMechs.some(m => m.id === fo.attacker_id))
     };
 
-    // Use a fixed RFC-4122 nil-variant UUID for the AI sentinel (profile_id col is uuid type).
-    // Fire-and-forget — resolution does NOT wait on this write.
+    // profile_id column is uuid type — use a fixed sentinel UUID for the AI.
+    // Fire-and-forget persist; resolution runs from memory to avoid read-after-write race.
     const AI_UUID = '00000000-0000-0000-0000-000000000002';
     db.from('ironfield_turn_plans')
       .upsert({ game_id: gameId, profile_id: AI_UUID,
@@ -1718,7 +1725,6 @@ async function submitPlan() {
         if (error) console.warn('AI plan persist (non-fatal):', error.message);
       });
 
-    // Resolve directly from memory — bypasses DB read-after-write race entirely
     enemyPlanSubmitted = true;
     updatePlanBar();
     await resolveTurn([
@@ -4775,6 +4781,7 @@ function resize() {
   });
   document.addEventListener('mousemove', e => {
     if (!dragging) return;
+    // Panel is on the right edge — drag left to widen, right to narrow
     const newW = Math.min(MAX_W, Math.max(MIN_W, startW + (startX - e.clientX)));
     rpan.style.width = newW + 'px';
     resize();
