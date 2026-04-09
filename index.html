@@ -222,12 +222,11 @@
   .rpan{
     width:192px;background:var(--pan);border-left:1px solid var(--bdr);
     flex-shrink:0;display:flex;flex-direction:column;overflow:hidden;
-    position:relative;min-width:150px;max-width:420px;
+    position:relative;min-width:150px;max-width:440px;
   }
   #rpan-resizer{
     position:absolute;left:0;top:0;bottom:0;width:5px;
-    cursor:col-resize;z-index:20;
-    background:transparent;
+    cursor:col-resize;z-index:20;background:transparent;
     transition:background .15s;
   }
   #rpan-resizer:hover,#rpan-resizer.dragging{
@@ -721,7 +720,7 @@
   </div>
 
   <div class="rpan" id="rpan">
-    <div id="rpan-resizer" title="Drag to resize panel"></div>
+    <div id="rpan-resizer" title="Drag to resize log panel"></div>
     <div class="ptitle">// UNIT DATA</div>
     <div class="ib"><div class="lbl">SELECTED</div><div class="val" id="rN">—</div></div>
     <div class="ib"><div class="lbl">PILOT</div><div class="coord" id="rPilot" style="font-size:9px;color:var(--dim);">—</div></div>
@@ -1696,17 +1695,8 @@ async function submitPlan() {
   if (vsAiMode) {
     addLog('— AI generating plan… —', 'ok');
     const aiPlan = aiGeneratePlan();
-    // Use a stable fake profile id for the AI so checkBothPlansSubmitted sees two plans
-    const aiProfileId = 'ai-player-2';
-    const { error: aiErr } = await db.from('ironfield_turn_plans')
-      .upsert({ game_id: gameId, profile_id: aiProfileId,
-                turn_number: turnNumber, plan: aiPlan },
-               { onConflict: 'game_id,profile_id,turn_number' });
-    if (aiErr) { addLog('AI plan submission failed: ' + aiErr.message, 'bad'); return; }
-    enemyPlanSubmitted = true;
-    updatePlanBar();
 
-    // In VS AI mode, resolve directly using in-memory plans to avoid DB read-after-write race
+    // Capture human plan from current mech state before any state mutation
     const myMechs = mechs.filter(m => m.player === myPlayer);
     const myPlanObj = {
       submitted_at: new Date().toISOString(),
@@ -1716,9 +1706,24 @@ async function submitPlan() {
       })),
       fire_orders: fireOrders.filter(fo => myMechs.some(m => m.id === fo.attacker_id))
     };
+
+    // Use a fixed RFC-4122 nil-variant UUID for the AI sentinel (profile_id col is uuid type).
+    // Fire-and-forget — resolution does NOT wait on this write.
+    const AI_UUID = '00000000-0000-0000-0000-000000000002';
+    db.from('ironfield_turn_plans')
+      .upsert({ game_id: gameId, profile_id: AI_UUID,
+                turn_number: turnNumber, plan: aiPlan },
+               { onConflict: 'game_id,profile_id,turn_number' })
+      .then(({ error }) => {
+        if (error) console.warn('AI plan persist (non-fatal):', error.message);
+      });
+
+    // Resolve directly from memory — bypasses DB read-after-write race entirely
+    enemyPlanSubmitted = true;
+    updatePlanBar();
     await resolveTurn([
       { profile_id: currentUser.id, plan: myPlanObj },
-      { profile_id: aiProfileId,    plan: aiPlan    }
+      { profile_id: AI_UUID,        plan: aiPlan    }
     ]);
     return;
   }
@@ -4753,67 +4758,49 @@ function resize() {
   draw();
 }
 
+// ── INIT ─────────────────────────────────────────────────────────
 // ── RIGHT PANEL DRAG-RESIZE ───────────────────────────────────────
 {
-  const rpan     = document.getElementById('rpan');
-  const resizer  = document.getElementById('rpan-resizer');
-  const MIN_W    = 150;
-  const MAX_W    = 440;
-  let dragging   = false;
-  let startX     = 0;
-  let startW     = 0;
+  const rpan    = document.getElementById('rpan');
+  const resizer = document.getElementById('rpan-resizer');
+  const MIN_W   = 150, MAX_W = 440;
+  let dragging  = false, startX = 0, startW = 0;
 
   resizer.addEventListener('mousedown', e => {
-    dragging = true;
-    startX   = e.clientX;
-    startW   = rpan.offsetWidth;
+    dragging = true; startX = e.clientX; startW = rpan.offsetWidth;
     resizer.classList.add('dragging');
-    document.body.style.cursor     = 'col-resize';
+    document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
     e.preventDefault();
   });
-
   document.addEventListener('mousemove', e => {
     if (!dragging) return;
-    // Panel is on the right: dragging left = wider, right = narrower
-    const delta  = startX - e.clientX;
-    const newW   = Math.min(MAX_W, Math.max(MIN_W, startW + delta));
+    const newW = Math.min(MAX_W, Math.max(MIN_W, startW + (startX - e.clientX)));
     rpan.style.width = newW + 'px';
-    resize();  // reflow canvas
+    resize();
   });
-
   document.addEventListener('mouseup', () => {
     if (!dragging) return;
     dragging = false;
     resizer.classList.remove('dragging');
-    document.body.style.cursor     = '';
+    document.body.style.cursor = '';
     document.body.style.userSelect = '';
     resize();
   });
-
-  // Touch support (tablets)
+  // Touch support
   resizer.addEventListener('touchstart', e => {
-    dragging = true;
-    startX   = e.touches[0].clientX;
-    startW   = rpan.offsetWidth;
+    dragging = true; startX = e.touches[0].clientX; startW = rpan.offsetWidth;
     e.preventDefault();
   }, { passive: false });
-
   document.addEventListener('touchmove', e => {
     if (!dragging) return;
-    const delta = startX - e.touches[0].clientX;
-    const newW  = Math.min(MAX_W, Math.max(MIN_W, startW + delta));
+    const newW = Math.min(MAX_W, Math.max(MIN_W, startW + (startX - e.touches[0].clientX)));
     rpan.style.width = newW + 'px';
     resize();
   }, { passive: true });
-
-  document.addEventListener('touchend', () => {
-    dragging = false;
-    resize();
-  });
+  document.addEventListener('touchend', () => { dragging = false; resize(); });
 }
 
-// ── INIT ─────────────────────────────────────────────────────────
 window.addEventListener('resize', resize);
 buildVertexList();
 buildAdjacency();
