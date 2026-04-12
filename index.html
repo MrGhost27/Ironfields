@@ -678,7 +678,7 @@
     <div id="hPhase"><span class="blink">●</span> <b>PLANNING</b></div>
   </div>
   <div class="userbar">
-    <span style="color:var(--dim);font-size:8px;letter-spacing:1px;opacity:0.6;" title="Build version">v2.6</span>
+    <span style="color:var(--dim);font-size:8px;letter-spacing:1px;opacity:0.6;" title="Build version">v2.7</span>
     <span>PILOT: <b id="hUser">—</b></span>
     <button class="auth-btn sec" style="padding:3px 8px;font-size:8px;" onclick="returnToLobby()">LOBBY</button>
     <button class="auth-btn sec" style="padding:3px 8px;font-size:8px;color:var(--red);border-color:rgba(255,68,68,0.4);" onclick="confirmEndGame()">END GAME</button>
@@ -983,10 +983,7 @@ function openWaiting() {
   showScreen('scr-waiting');
 }
 
-let _lanceUIBusy = false;  // suppress realtime-triggered rebuilds during user interaction
-
-function buildLanceBuilderUI(force = false) {
-  if (_lanceUIBusy && !force) return;  // don't stomp an in-progress interaction
+function buildLanceBuilderUI() {
   const container = document.getElementById('lb-slots');
   if (!container) return;
   container.innerHTML = '';
@@ -998,24 +995,28 @@ function buildLanceBuilderUI(force = false) {
     container.appendChild(makeLanceSlotRow(i, chassis, myPicks));
   });
 
-  // ADD MECH button
+  // ADD MECH button — disabled if at cap OR no chassis fits remaining budget
   const addRow = document.createElement('div');
   addRow.style.cssText = 'margin-top:4px;';
   const addBtn = document.createElement('button');
   addBtn.className = 'auth-btn sec';
   addBtn.style.cssText = 'font-size:9px;padding:4px 10px;width:100%;letter-spacing:2px;';
   addBtn.textContent = '+ ADD MECH';
-  addBtn.disabled = myPicks.length >= LANCE_MAX || lanceCost(myPicks) >= LANCE_BUDGET;
+  const remaining = LANCE_BUDGET - lanceCost(myPicks);
+  const cheapestFit = Object.values(LANCE_CHASSIS).find(ch => ch.cost <= remaining);
+  addBtn.disabled = myPicks.length >= LANCE_MAX || !cheapestFit;
+  if (!cheapestFit && myPicks.length < LANCE_MAX) {
+    addBtn.title = 'No chassis fits remaining budget';
+    addBtn.style.opacity = '0.35';
+  }
   addBtn.onclick = () => {
     if (myPicks.length >= LANCE_MAX) return;
-    _lanceUIBusy = true;
-    // Pick the cheapest chassis that fits remaining budget
-    const remaining = LANCE_BUDGET - lanceCost(myPicks);
-    const cheapest = Object.values(LANCE_CHASSIS).find(ch => ch.cost <= remaining)
-                  ?? Object.values(LANCE_CHASSIS)[0];
-    myPicks.push(cheapest.key);
-    buildLanceBuilderUI(true);
-    saveLancePicks().finally(() => { _lanceUIBusy = false; });
+    const rem = LANCE_BUDGET - lanceCost(myPicks);
+    const fit = Object.values(LANCE_CHASSIS).find(ch => ch.cost <= rem);
+    if (!fit) return;  // no affordable chassis — should not happen if button is correctly disabled
+    myPicks.push(fit.key);
+    buildLanceBuilderUI();
+    saveLancePicks();
   };
   addRow.appendChild(addBtn);
   container.appendChild(addRow);
@@ -1046,15 +1047,14 @@ function makeLanceSlotRow(i, chassis, myPicks) {
     sel.appendChild(opt);
   });
   sel.addEventListener('change', () => {
-    _lanceUIBusy = true;
     myPicks[i] = sel.value;
     const costEl = document.getElementById(`lb-cost-${i}`);
     if (costEl) costEl.textContent = LANCE_CHASSIS[sel.value]?.cost ?? '?';
     updateLanceBudgetDisplay();
     updateLanceDesc(sel.value);
-    // Rebuild to refresh add/remove button states, then save
-    buildLanceBuilderUI(true);
-    saveLancePicks().finally(() => { _lanceUIBusy = false; });
+    // Refresh add button disabled state
+    buildLanceBuilderUI();
+    saveLancePicks();
   });
   sel.addEventListener('focus', () => updateLanceDesc(sel.value));
 
@@ -1079,10 +1079,9 @@ function makeLanceSlotRow(i, chassis, myPicks) {
     removeBtn.onmouseenter = () => { removeBtn.style.color='var(--red)'; removeBtn.style.borderColor='var(--red)'; };
     removeBtn.onmouseleave = () => { removeBtn.style.color='var(--dim)'; removeBtn.style.borderColor='var(--bdr)'; };
     removeBtn.onclick = () => {
-      _lanceUIBusy = true;
       myPicks.splice(i, 1);
-      buildLanceBuilderUI(true);
-      saveLancePicks().finally(() => { _lanceUIBusy = false; });
+      buildLanceBuilderUI();
+      saveLancePicks();
     };
   }
 
@@ -1114,14 +1113,20 @@ function updateLanceBudgetDisplay() {
 
   const statusEl = document.getElementById('lb-status');
   if (!statusEl) return;
+  // Check whether any chassis actually fits remaining budget
+  const rem       = LANCE_BUDGET - used;
+  const canAfford = Object.values(LANCE_CHASSIS).some(ch => ch.cost <= rem);
   if (used > LANCE_BUDGET) {
     statusEl.textContent = `OVER BUDGET by ${used - LANCE_BUDGET} pts — reduce your lance.`;
     statusEl.className   = 'lance-status bad';
   } else if (used === LANCE_BUDGET) {
     statusEl.textContent = 'Lance locked in at full budget. ✓';
     statusEl.className   = 'lance-status ok';
-  } else {
-    statusEl.textContent = `${LANCE_BUDGET - used} pts remaining — you can afford heavier chassis.`;
+  } else if (rem > 0 && canAfford) {
+    const cheapest = Object.values(LANCE_CHASSIS).find(ch => ch.cost <= rem);
+    statusEl.textContent = `${rem} pts remaining — cheapest addition: ${cheapest.label} (${cheapest.cost}pts).`;
+  } else if (rem > 0) {
+    statusEl.textContent = `${rem} pts remaining — not enough for any chassis.`;
     statusEl.className   = 'lance-status wait';
   }
 }
@@ -1714,7 +1719,7 @@ async function submitPlan() {
       fire_orders: fireOrders.filter(fo => myMechs.some(m => m.id === fo.attacker_id))
     };
 
-    // profile_id column is uuid type — use a fixed sentinel UUID for the AI.
+    // profile_id is uuid type — use a fixed sentinel UUID for the AI.
     // Fire-and-forget persist; resolution runs from memory to avoid read-after-write race.
     const AI_UUID = '00000000-0000-0000-0000-000000000002';
     db.from('ironfield_turn_plans')
@@ -4781,7 +4786,6 @@ function resize() {
   });
   document.addEventListener('mousemove', e => {
     if (!dragging) return;
-    // Panel is on the right edge — drag left to widen, right to narrow
     const newW = Math.min(MAX_W, Math.max(MIN_W, startW + (startX - e.clientX)));
     rpan.style.width = newW + 'px';
     resize();
@@ -4794,7 +4798,6 @@ function resize() {
     document.body.style.userSelect = '';
     resize();
   });
-  // Touch support
   resizer.addEventListener('touchstart', e => {
     dragging = true; startX = e.touches[0].clientX; startW = rpan.offsetWidth;
     e.preventDefault();
