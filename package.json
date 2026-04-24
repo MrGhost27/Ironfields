@@ -1,0 +1,11 @@
+{
+  "name": "ironfield-tests",
+  "version": "1.0.0",
+  "description": "Automated tests for Ironfields",
+  "devDependencies": {
+    "@playwright/test": "^1.42.1"
+  },
+  "scripts": {
+    "test": "playwright test"
+  }
+}

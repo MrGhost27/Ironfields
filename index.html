@@ -110,6 +110,8 @@
   .side{
     width:200px;background:var(--pan);border-right:1px solid var(--bdr);
     display:flex;flex-direction:column;flex-shrink:0;
+    position:relative;overflow:hidden;
+    min-width:160px;max-width:500px;
   }
   .ptitle{
     font-family:'Orbitron',sans-serif;font-size:8px;letter-spacing:3px;
@@ -231,6 +233,14 @@
   }
   #rpan-resizer:hover,#rpan-resizer.dragging{
     background:var(--phd);opacity:0.7;
+  }
+  #lpan-resizer{
+    position:absolute;right:0;top:0;bottom:0;width:10px;
+    cursor:col-resize;z-index:100;background:transparent;
+    transition:background .15s;
+  }
+  #lpan-resizer:hover,#lpan-resizer.dragging{
+    background:rgba(0,255,136,0.1);
   }
   .ib{padding:8px 11px;border-bottom:1px solid var(--bdr);}
   .ib .lbl{font-size:8px;color:var(--dim);letter-spacing:2px;margin-bottom:3px;}
@@ -389,6 +399,49 @@
   .auth-box{
     background:var(--pan);border:1px solid var(--bdr);
     padding:32px 36px;width:320px;display:flex;flex-direction:column;gap:14px;
+  }
+  .mc.p2{ border-color:rgba(255,68,68,0.2); }
+  .mc.sel{ border-color:var(--ph); background:rgba(0,255,136,0.06); box-shadow:0 0 10px rgba(0,255,136,0.1); }
+  .mc .mn{ font-family:'Orbitron',sans-serif;font-size:10px;color:var(--ph);margin-bottom:2px;letter-spacing:1px; }
+  .mc .ms{ font-size:9px; color:var(--dim); }
+  .mc .sr{ display:flex; justify-content:space-between; padding:1px 0; }
+  .mc .sr .v{ color:var(--txt); }
+
+  /* Armor Grid */
+  .mc-armor-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2px;
+    margin-top: 6px;
+    border-top: 1px solid var(--bdr);
+    padding-top: 5px;
+  }
+  .mc-armor-cell {
+    font-size: 7px;
+    text-align: center;
+    line-height: 1.1;
+  }
+  .mc-armor-cell .loc { color: var(--dim); display: block; margin-bottom: 1px; }
+  .mc-armor-cell .val { color: var(--phd); }
+  .mc-armor-cell.crit .val { color: var(--red); font-weight: bold; }
+
+  /* Weapons List */
+  .mc-weapons {
+    margin-top: 6px;
+    border-top: 1px solid var(--bdr);
+    padding-top: 4px;
+  }
+  .mc-weapon-item {
+    font-size: 8px;
+    color: var(--txt);
+    display: flex;
+    justify-content: space-between;
+    opacity: 0.8;
+  }
+  .mc-weapon-item.disabled {
+    color: var(--red);
+    text-decoration: line-through;
+    opacity: 0.5;
   }
   .auth-box h2{
     font-family:'Orbitron',sans-serif;font-size:13px;letter-spacing:4px;
@@ -651,13 +704,6 @@
       <div id="active-games-list" style="display:flex;flex-direction:column;gap:5px;"></div>
       <hr class="lobby-divider">
     </div>
-    <div class="lobby-section">
-      <div class="lbl">MAP PRESET</div>
-      <div style="display:flex;flex-direction:column;gap:4px;" id="lobby-presets">
-        <!-- filled by JS -->
-      </div>
-    </div>
-    <hr class="lobby-divider">
     <button class="auth-btn sec" onclick="doSignOut()">SIGN OUT</button>
   </div>
 </div>
@@ -669,6 +715,13 @@
     <div class="lbl">JOIN CODE  ·  CLICK TO COPY</div>
     <div class="code-display" id="code-display" onclick="copyCode()">——————</div>
     <div id="seat-rows" style="display:flex;flex-direction:column;gap:6px;"></div>
+
+    <!-- Map selection (host only) -->
+    <div id="wait-map-section" style="border:1px solid var(--bdr);padding:12px 14px;margin-top:4px;">
+      <div class="lbl">// MISSION THEATRE</div>
+      <div class="lbl" style="margin-top:4px;opacity:0.6;font-size:7px;letter-spacing:1px;">SELECT MAP PRESET</div>
+      <div id="wait-presets" style="display:flex;flex-direction:column;gap:4px;margin-top:6px;"></div>
+    </div>
 
     <!-- Lance builder -->
     <div class="lance-builder" id="lance-builder">
@@ -720,7 +773,8 @@
 </header>
 
 <div class="main">
-  <div class="side">
+  <div class="side" id="lpan">
+    <div id="lpan-resizer" title="Drag to resize roster panel"></div>
     <div class="ptitle">// LANCE ROSTER</div>
     <div class="mlist" id="mlist"></div>
   </div>
@@ -830,23 +884,22 @@ function showScreen(id) {
     if (el) el.classList.toggle('hidden', s !== id);
   });
   if (id === 'scr-lobby') {
-    buildLobbyPresets();
     refreshActiveGames();
   }
 }
 
-function buildLobbyPresets() {
-  const container = document.getElementById('lobby-presets');
+function buildMapPresetsUI(containerId) {
+  const container = document.getElementById(containerId);
   if (!container) return;
   container.innerHTML = '';
   Object.entries(MAP_PRESETS).forEach(([key, preset]) => {
     const btn = document.createElement('button');
-    btn.className = 'auth-btn';
-    btn.style.cssText = 'margin-top:2px;font-size:10px;padding:6px 10px;';
+    btn.className = 'auth-btn sec';
+    btn.style.cssText = 'font-size:9px;padding:4px 10px;';
     const isActive = key === activePreset;
     if (isActive) { btn.style.borderColor = '#00ff88'; btn.style.color = '#00ff88'; }
     btn.textContent = (isActive ? '▶ ' : '') + preset.label;
-    btn.onclick = () => { applyMapPreset(key); buildLobbyPresets(); };
+    btn.onclick = () => { applyMapPreset(key); buildMapPresetsUI(containerId); };
     container.appendChild(btn);
   });
 }
@@ -981,12 +1034,17 @@ async function refreshActiveGames() {
     btn.style.cssText = 'font-size:10px;text-align:left;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;';
     
     const isP1 = g.p1_id === currentUser.id;
+    const isAi = g.p2_id && g.p1_id === g.p2_id;
     const role = isP1 ? 'P1' : 'P2';
     const statusTxt = g.status === 'active' ? `TURN ${g.turn_number}` : 'LOBBY';
     const date = new Date(g.created_at).toLocaleDateString([], {month:'short', day:'numeric'});
     
+    const typeIcon = isAi ? '<span style="color:var(--blu);margin-right:6px;" title="Vs AI">🤖</span>' : 
+                    (g.p2_id ? '<span style="color:var(--red);margin-right:6px;" title="1v1 PVP">⚔️</span>' : 
+                               '<span style="color:var(--dim);margin-right:6px;" title="Waiting for Opponent">👥</span>');
+
     btn.innerHTML = `
-      <span><b style="color:var(--ph)">[${g.join_code}]</b> ${statusTxt}</span>
+      <span><b style="color:var(--ph)">[${g.join_code}]</b> ${typeIcon}${statusTxt}</span>
       <span style="opacity:0.6;font-size:8px;">${role} · ${date}</span>
     `;
     btn.onclick = () => tryRejoin(g.id);
@@ -1235,8 +1293,10 @@ async function renderWaiting() {
   // Derive host status from DB — survives cache wipes and rejoins
   isHost = g.host_id === mine;
 
-  // Sync lance picks from DB state into local state
-  // USE SPLICE to maintain references in case buildLanceBuilderUI closures are holding them
+  // Sync lance picks and map preset from DB state into local state
+  if (g.state?.activePreset) {
+    activePreset = g.state.activePreset;
+  }
   if (g.state?.lancePicks?.p1) {
     lancePicksP1.splice(0, lancePicksP1.length, ...g.state.lancePicks.p1);
   }
@@ -1244,9 +1304,22 @@ async function renderWaiting() {
     lancePicksP2.splice(0, lancePicksP2.length, ...g.state.lancePicks.p2);
   }
 
-  // Always rebuild lance UI if we are in a seat to ensure we show the latest server/local state
-  if (myPlayer !== null) {
-    buildLanceBuilderUI();
+  // Map selection (host only)
+  const mapSection = document.getElementById('wait-map-section');
+  if (mapSection) {
+    mapSection.style.display = isHost ? 'block' : 'none';
+    if (isHost) buildMapPresetsUI('wait-presets');
+  }
+
+  // Always rebuild lance UI if we are in a seat
+  const lanceBuilder = document.getElementById('lance-builder');
+  if (lanceBuilder) {
+    if (myPlayer !== null) {
+      lanceBuilder.style.display = 'block';
+      buildLanceBuilderUI();
+    } else {
+      lanceBuilder.style.display = 'none';
+    }
   }
 
   const makeRow = (slot, pid, name, color, picks) => {
@@ -1646,6 +1719,8 @@ function confirmEndGame() {
 
 async function doEndGame() {
   showSync('Cleaning up…');
+  const overlay = document.getElementById('scr-victory');
+  if (overlay) overlay.classList.add('hidden');
   if (realtimeChan) { db.removeChannel(realtimeChan); realtimeChan = null; }
   if (gameId) {
     const gid = gameId;
@@ -2068,6 +2143,7 @@ function buildInitialState() {
   // Lance picks and terrain/elevation are stored here so both players sync during the waiting room.
   return { mechs: [], turn: 1,
            terrain: terrainTiles, elevation: elevationTiles,
+           activePreset: activePreset,
            lancePicks: { p1: [...lancePicksP1], p2: [...lancePicksP2] } };
 }
 
@@ -4365,13 +4441,22 @@ function updateTerrainPanel() {
   });
 }
 
-function applyMapPreset(key) {
+async function applyMapPreset(key) {
   const preset = MAP_PRESETS[key];
   if (!preset) return;
   const result   = preset.build();
   terrainTiles   = result.terrain   ?? result;   // fallback: treat result directly as terrain map
   elevationTiles = result.elevation ?? {};
   activePreset   = key;
+
+  if (gameId && isHost) {
+    const { data: g } = await db.from('ironfield_games').select('state').eq('id', gameId).single();
+    if (g) {
+      const newState = { ...g.state, terrain: terrainTiles, elevation: elevationTiles, activePreset: key };
+      await db.from('ironfield_games').update({ state: newState }).eq('id', gameId);
+    }
+  }
+
   addLog(`Map preset loaded: ${preset.label}`, 'ok');
   updateTerrainPanel();
   draw();
@@ -4578,6 +4663,37 @@ function buildRoster() {
       '<span style="color:' + skillColor + ';font-size:8px;">GUN:' + gStr + '  PIL:' + pStr + '</span>' +
       '</div>';
 
+    // Detailed Armor Grid
+    let armorGridHtml = '<div class="mc-armor-grid">';
+    const locMap = { 'H':'head', 'CT':'ct', 'LT':'lt', 'RT':'rt', 'LA':'la', 'RA':'ra', 'LL':'ll', 'RL':'rl' };
+    ['H','CT','LT','RT','LA','RA','LL','RL'].forEach(loc => {
+      const dbKey = locMap[loc];
+      const cur = armour?.[dbKey] ?? 0;
+      const max = baseArm?.[dbKey] ?? 1;
+      const curStr = structure?.[dbKey] ?? 0;
+      const maxStr = baseStr?.[dbKey] ?? 1;
+      const isCrit = cur === 0 || curStr < maxStr;
+      armorGridHtml += `<div class="mc-armor-cell ${isCrit?'crit':''}">
+        <span class="loc">${loc}</span>
+        <span class="val">${cur}/${max}</span>
+        <span class="val" style="color:var(--dim);font-size:6px;display:block;">${curStr}/${maxStr}</span>
+      </div>`;
+    });
+    armorGridHtml += '</div>';
+
+    // Weapons List
+    let weaponsHtml = '<div class="mc-weapons">';
+    cls.weapons.forEach(wk => {
+      const w = WEAPONS[wk];
+      if (!w) return;
+      const disabled = mechWeaponDisabled(mech, wk);
+      weaponsHtml += `<div class="mc-weapon-item ${disabled?'disabled':''}">
+        <span>${w.label}</span>
+        <span>${disabled ? 'OFFLINE' : 'ONLINE'}</span>
+      </div>`;
+    });
+    weaponsHtml += '</div>';
+
     // Build card HTML — avatar injected via DOM after innerHTML set (avoids data-URL in template)
     const mechCol = isP1 ? '#00ff88' : '#ff4444';
     const inner = '<div class="mc-header" style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">' +
@@ -4591,7 +4707,7 @@ function buildRoster() {
         '<div class="sr"><span>CLASS</span><span class="v">' + (cls?.label ?? mech.cls) + '</span></div>' +
         '<div class="sr"><span>FACING</span><span class="v">' + mech.facing + '\u00b0</span></div>' +
         '<div class="sr"><span>MP</span><span class="v">' + mpLeft + '/' + mpMax + '</span></div>' +
-        pipHtml + hpHtml + statusHtml + fireHtml +
+        pipHtml + hpHtml + statusHtml + fireHtml + armorGridHtml + weaponsHtml +
       '</div>';
     const c = document.createElement('div');
     const destroyedCls = mech.destroyed ? 'destroyed' : '';
@@ -4851,28 +4967,31 @@ canvas.addEventListener('click', e => {
     const attacker = mechs.find(m => m.id === selId);
     if (!attacker || attacker.destroyed || near.destroyed) return;
 
-    // Must have a weapon selected
-    const cls = MECH_CLASSES[attacker.cls];
-    let wKey = selectedWeapon;
-    if (!wKey || !cls.weapons.includes(wKey)) {
-      addLog(attacker.name + ': select a weapon first, then click an enemy', 'bad'); return;
+    // Must have weapon(s) selected
+    if (selectedWeapons.length === 0) {
+      addLog(attacker.name + ': select weapon(s) first, then click an enemy', 'bad'); return;
     }
 
-    // Validate the shot is possible
-    const w  = WEAPONS[wKey];
-    const tn = calcToHit(attacker, near, w);
-    if (tn === null) {
-      addLog(attacker.name + ': ' + w.label + ' \u2014 NO SHOT on ' + near.name + ' (out of range or arc)', 'bad');
-      return;
+    let assignedCount = 0;
+    selectedWeapons.forEach(wKey => {
+      const w  = WEAPONS[wKey];
+      const tn = calcToHit(attacker, near, w);
+      if (tn === null) {
+        addLog(attacker.name + ': ' + w.label + ' \u2014 NO SHOT on ' + near.name + ' (out of range or arc)', 'bad');
+        return;
+      }
+      // Replace any existing order for THIS weapon from this attacker
+      fireOrders = fireOrders.filter(fo => !(fo.attacker_id === selId && fo.weapon === wKey));
+      fireOrders.push({ attacker_id: selId, target_id: near.id, weapon: wKey });
+      addLog(attacker.name + ' \u2192 ' + near.name + ' : ' + w.label + '  [TN:' + tn + ']', 'ok');
+      assignedCount++;
+    });
+
+    if (assignedCount > 0) {
+      selectedWeapons = []; // clear selection after successful volley assignment
+      updateWeaponPicker(null);
+      buildRoster(); draw();
     }
-
-    // Replace any existing order for THIS weapon from this attacker (allow different targets per weapon)
-    fireOrders = fireOrders.filter(fo => !(fo.attacker_id === selId && fo.weapon === wKey));
-    fireOrders.push({ attacker_id: selId, target_id: near.id, weapon: wKey });
-
-    addLog(attacker.name + ' \u2192 ' + near.name + ' : ' + w.label + '  [TN:' + tn + ']', 'ok');
-    updateWeaponPicker(null);
-    buildRoster(); draw();
   }
 });
 canvas.addEventListener('contextmenu', e => {
@@ -4886,10 +5005,11 @@ canvas.addEventListener('contextmenu', e => {
   }, null);
   const near = nm && nm.d < OUTLINE_R * 0.55 ? nm.m : null;
 
-  // In fire mode: right-click own mech = cancel that weapon's order; right-click anywhere else = deselect
-  if (mode === 'fire' && near && near.player === myPlayer && selectedWeapon) {
-    fireOrders = fireOrders.filter(fo => !(fo.attacker_id === near.id && fo.weapon === selectedWeapon));
-    addLog(near.name + ': ' + (WEAPONS[selectedWeapon]?.label ?? selectedWeapon) + ' order cancelled');
+  // In fire mode: right-click own mech = cancel those weapons' orders; right-click anywhere else = deselect
+  if (mode === 'fire' && near && near.player === myPlayer && selectedWeapons.length > 0) {
+    fireOrders = fireOrders.filter(fo => !(fo.attacker_id === near.id && selectedWeapons.includes(fo.weapon)));
+    addLog(near.name + ': selected weapon orders cancelled');
+    selectedWeapons = [];
     updateWeaponPicker(null); buildRoster(); draw();
     return;
   }
@@ -5018,6 +5138,49 @@ function resize() {
     resize();
   }, { passive: true });
   document.addEventListener('touchend', () => { dragging = false; resize(); });
+}
+
+// ── LEFT PANEL DRAG-RESIZE ────────────────────────────────────────
+{
+  const lpan    = document.getElementById('lpan');
+  const resizer = document.getElementById('lpan-resizer');
+  const MIN_W   = 160, MAX_W = 500;
+  let dragging  = false, startX = 0, startW = 0;
+
+  if (resizer && lpan) {
+    resizer.addEventListener('mousedown', e => {
+      dragging = true; startX = e.clientX; startW = lpan.offsetWidth;
+      resizer.classList.add('dragging');
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      const newW = Math.min(MAX_W, Math.max(MIN_W, startW + (e.clientX - startX)));
+      lpan.style.width = newW + 'px';
+      resize();
+    });
+    document.addEventListener('mouseup', () => {
+      if (!dragging) return;
+      dragging = false;
+      resizer.classList.remove('dragging');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      resize();
+    });
+    resizer.addEventListener('touchstart', e => {
+      dragging = true; startX = e.touches[0].clientX; startW = lpan.offsetWidth;
+      e.preventDefault();
+    }, { passive: false });
+    document.addEventListener('touchmove', e => {
+      if (!dragging) return;
+      const newW = Math.min(MAX_W, Math.max(MIN_W, startW + (e.touches[0].clientX - startX)));
+      lpan.style.width = newW + 'px';
+      resize();
+    }, { passive: true });
+    document.addEventListener('touchend', () => { dragging = false; resize(); });
+  }
 }
 
 window.addEventListener('resize', resize);
