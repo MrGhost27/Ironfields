@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IRONFIELD - Supabase Connection Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root {
+            --ph: #00ff88;
+            --phd: #00994d;
+            --bg: #060a07;
+            --pan: #08100a;
+            --bdr: #14221a;
+            --txt: #00cc66;
+            --dim: #005522;
+            --red: #ff4444;
+            --blu: #88aaff;
+        }
+        body {
+            background: var(--bg);
+            color: var(--txt);
+            font-family: 'Share Tech Mono', monospace;
+            padding: 40px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: var(--pan);
+            border: 1px solid var(--bdr);
+            padding: 30px;
+            box-shadow: 0 0 30px rgba(0, 255, 136, 0.05);
+        }
+        h1 {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--ph);
+            font-size: 1.5rem;
+            letter-spacing: 4px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--bdr);
+            padding-bottom: 10px;
+        }
+        .log {
+            background: #000;
+            border: 1px solid var(--bdr);
+            padding: 15px;
+            font-size: 0.9rem;
+            height: 300px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+        }
+        .entry { margin-bottom: 5px; }
+        .success { color: var(--ph); }
+        .error { color: var(--red); }
+        .info { color: var(--blu); }
+        .warning { color: #ffaa00; }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 2px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        .status-pending { background: rgba(136, 170, 255, 0.1); color: var(--blu); border: 1px solid var(--blu); }
+        .status-success { background: rgba(0, 255, 136, 0.1); color: var(--ph); border: 1px solid var(--ph); }
+        .status-error { background: rgba(255, 68, 68, 0.1); color: var(--red); border: 1px solid var(--red); }
+
+        button {
+            background: transparent;
+            border: 1px solid var(--ph);
+            color: var(--ph);
+            padding: 10px 20px;
+            cursor: pointer;
+            font-family: inherit;
+            letter-spacing: 2px;
+            transition: all 0.2s;
+        }
+        button:hover {
+            background: rgba(0, 255, 136, 0.1);
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <h1>// CONNECTION_TEST.EXE</h1>
+        <div id="overall-status" class="status-badge status-pending">READY TO TEST</div>
+        
+        <div id="log" class="log">
+            <div class="entry info">System initialized. Waiting for user input...</div>
+        </div>
+
+        <button id="run-btn" onclick="runTests()">RUN CONNECTION DIAGNOSTICS</button>
+
+        <div style="margin-top: 20px; font-size: 0.8rem; color: var(--dim);">
+            <p><strong>Configured URL:</strong> <span id="conf-url">...</span></p>
+            <p>This script checks API reachability, Auth service, and Realtime subscription capability.</p>
+        </div>
+    </div>
+
+    <script>
+        // Credentials from index.html
+        const SUPABASE_URL  = 'https://ffztxyeevdqlhvxzcopn.supabase.co';
+        const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmenR4eWVldmRxbGh2eHpjb3BuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyNzgxMTMsImV4cCI6MjA4Nzg1NDExM30.EdA8cwETE00YFENj-CN93ScKMFN4yfNNG63BentHiQ4';
+
+        document.getElementById('conf-url').textContent = SUPABASE_URL;
+
+        const logEl = document.getElementById('log');
+        const statusEl = document.getElementById('overall-status');
+        const btn = document.getElementById('run-btn');
+
+        function addLog(msg, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `entry ${type}`;
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logEl.appendChild(div);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        async function runTests() {
+            btn.disabled = true;
+            statusEl.textContent = 'DIAGNOSING...';
+            statusEl.className = 'status-badge status-pending';
+            logEl.innerHTML = '';
+            
+            addLog('Initializing Supabase client...', 'info');
+            
+            try {
+                const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+                addLog('Client initialized successfully.', 'success');
+
+                // 1. Basic API Test
+                addLog('Test 1: Testing API / Database reachability...', 'info');
+                const { data: apiData, error: apiError } = await supabase.from('profiles').select('count', { count: 'exact', head: true });
+                
+                if (apiError) {
+                    if (apiError.message === 'Failed to fetch') {
+                        addLog('CRITICAL: CORS OR NETWORK ERROR.', 'error');
+                        addLog('The browser blocked the request. This usually means:', 'warning');
+                        addLog('1. Your Supabase project is still offline/restoring.', 'warning');
+                        addLog('2. Your current Origin (URL) is not allowed in Supabase Dashboard.', 'warning');
+                        addLog('3. You have no internet connection or a firewall is blocking it.', 'warning');
+                        throw new Error('Connection failed');
+                    } else {
+                        addLog(`API responded with error: ${apiError.message}`, 'error');
+                        addLog('Note: If this is an RLS error, the connection itself is WORKING.', 'info');
+                    }
+                } else {
+                    addLog('API Test: SUCCESS. Database is reachable.', 'success');
+                }
+
+                // 2. Auth Service Test
+                addLog('Test 2: Testing Auth service...', 'info');
+                const { data: authData, error: authError } = await supabase.auth.getSession();
+                if (authError) {
+                    addLog(`Auth Test failed: ${authError.message}`, 'error');
+                } else {
+                    addLog('Auth Test: SUCCESS. Auth service is reachable.', 'success');
+                }
+
+                // 3. Realtime Test
+                addLog('Test 3: Testing Realtime (WebSockets)...', 'info');
+                const channel = supabase.channel('connection-test-room');
+                
+                const timeout = setTimeout(() => {
+                    addLog('Realtime Test: TIMEOUT. (May be blocked by network/proxy)', 'error');
+                    updateFinalStatus(false);
+                }, 5000);
+
+                channel.subscribe((status) => {
+                    if (status === 'SUBSCRIBED') {
+                        clearTimeout(timeout);
+                        addLog('Realtime Test: SUCCESS. WebSocket connection established.', 'success');
+                        supabase.removeChannel(channel);
+                        updateFinalStatus(true);
+                    } else if (status === 'CHANNEL_ERROR') {
+                        clearTimeout(timeout);
+                        addLog('Realtime Test: CHANNEL_ERROR. Check project settings.', 'error');
+                        updateFinalStatus(false);
+                    }
+                });
+
+            } catch (err) {
+                addLog(`Diagnostic aborted: ${err.message}`, 'error');
+                updateFinalStatus(false);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        function updateFinalStatus(success) {
+            if (success) {
+                statusEl.textContent = 'CONNECTION SECURE';
+                statusEl.className = 'status-badge status-success';
+                addLog('All systems operational. Local environment can communicate with Supabase.', 'success');
+            } else {
+                statusEl.textContent = 'CONNECTION FAILED';
+                statusEl.className = 'status-badge status-error';
+                addLog('Connection issues detected. Please check logs above.', 'error');
+            }
+        }
+    </script>
+</body>
+</html>

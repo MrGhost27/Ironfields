@@ -250,7 +250,28 @@
     position:absolute;background:rgba(4,8,5,.97);border:1px solid var(--bdr);
     padding:3px 8px;font-size:9px;color:var(--dim);
     pointer-events:none;z-index:50;display:none;white-space:nowrap;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.6);
+    backdrop-filter: blur(4px);
   }
+  .tip.mech-hud {
+    padding: 10px; min-width: 140px; border-color: var(--phd);
+    color: var(--txt); white-space: normal;
+  }
+  .tip.mech-hud .hud-title {
+    font-family: 'Orbitron', sans-serif; font-size: 10px; font-weight: bold;
+    letter-spacing: 1px; border-bottom: 1px solid var(--bdr);
+    padding-bottom: 4px; margin-bottom: 6px; display: flex; justify-content: space-between;
+  }
+  .tip.mech-hud .hud-row {
+    display: flex; justify-content: space-between; font-size: 8px; margin-bottom: 2px;
+    color: var(--dim);
+  }
+  .tip.mech-hud .hud-val { color: var(--txt); }
+  .tip.mech-hud .hud-bar-wrap {
+    height: 4px; background: rgba(255,255,255,0.05); border: 1px solid var(--bdr);
+    margin: 2px 0 6px; position: relative; overflow: hidden;
+  }
+  .tip.mech-hud .hud-bar-fill { height: 100%; position: absolute; left: 0; top: 0; }
   .wheel-wrap{padding:8px 12px;border-bottom:1px solid var(--bdr);
               display:flex;justify-content:center;}
   .move-hint{font-size:9px;color:var(--amb);text-align:center;
@@ -556,6 +577,14 @@
   </div>
 
   <div class="sett-row">
+    <div class="sett-label">COMBAT FEEDBACK</div>
+    <div style="display:flex;align-items:center;gap:8px;cursor:pointer;" onclick="toggleWeaponLabelsHover()">
+      <input type="checkbox" id="sett-wp-hover" style="accent-color:var(--ph);cursor:pointer;" checked>
+      <span style="font-size:8px;color:var(--txt);letter-spacing:1px;">WEAPON LABELS ON HOVER</span>
+    </div>
+  </div>
+
+  <div class="sett-row">
     <button class="sett-btn" onclick="resetDisplaySettings()" style="color:var(--dim);">RESET DEFAULTS</button>
   </div>
 </div>
@@ -617,6 +646,11 @@
       <div class="auth-err" id="join-err"></div>
     </div>
     <hr class="lobby-divider">
+    <div class="lobby-section" id="active-games-section" style="display:none;">
+      <div class="lbl">ACTIVE GAMES</div>
+      <div id="active-games-list" style="display:flex;flex-direction:column;gap:5px;"></div>
+      <hr class="lobby-divider">
+    </div>
     <div class="lobby-section">
       <div class="lbl">MAP PRESET</div>
       <div style="display:flex;flex-direction:column;gap:4px;" id="lobby-presets">
@@ -795,7 +829,10 @@ function showScreen(id) {
     const el = document.getElementById(s);
     if (el) el.classList.toggle('hidden', s !== id);
   });
-  if (id === 'scr-lobby') buildLobbyPresets();
+  if (id === 'scr-lobby') {
+    buildLobbyPresets();
+    refreshActiveGames();
+  }
 }
 
 function buildLobbyPresets() {
@@ -920,6 +957,43 @@ async function doRegister() {
   showScreen('scr-lobby');
 }
 
+async function refreshActiveGames() {
+  const section = document.getElementById('active-games-section');
+  const list = document.getElementById('active-games-list');
+  if (!section || !list || !currentUser) return;
+
+  const { data, error } = await db.from('ironfield_games')
+    .select('id, join_code, status, turn_number, p1_id, p2_id, created_at')
+    .or(`p1_id.eq.${currentUser.id},p2_id.eq.${currentUser.id}`)
+    .in('status', ['waiting', 'active'])
+    .order('created_at', { ascending: false });
+
+  if (error || !data || data.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+
+  section.style.display = 'flex';
+  list.innerHTML = '';
+  data.forEach(g => {
+    const btn = document.createElement('button');
+    btn.className = 'auth-btn sec';
+    btn.style.cssText = 'font-size:10px;text-align:left;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;';
+    
+    const isP1 = g.p1_id === currentUser.id;
+    const role = isP1 ? 'P1' : 'P2';
+    const statusTxt = g.status === 'active' ? `TURN ${g.turn_number}` : 'LOBBY';
+    const date = new Date(g.created_at).toLocaleDateString([], {month:'short', day:'numeric'});
+    
+    btn.innerHTML = `
+      <span><b style="color:var(--ph)">[${g.join_code}]</b> ${statusTxt}</span>
+      <span style="opacity:0.6;font-size:8px;">${role} · ${date}</span>
+    `;
+    btn.onclick = () => tryRejoin(g.id);
+    list.appendChild(btn);
+  });
+}
+
 async function doSignOut() {
   if (realtimeChan) { await db.removeChannel(realtimeChan); realtimeChan = null; }
   await db.auth.signOut();
@@ -967,6 +1041,7 @@ async function doJoinGame() {
   subscribeToGame();
   if (data.status === 'active') {
     loadStateFromDB(data);
+    startStateCache = data.state; // ensure enterGame picks up the current state
     enterGame();
     return;
   }
@@ -1161,15 +1236,17 @@ async function renderWaiting() {
   isHost = g.host_id === mine;
 
   // Sync lance picks from DB state into local state
-  if (g.state?.lancePicks?.p1) lancePicksP1 = g.state.lancePicks.p1;
-  if (g.state?.lancePicks?.p2) lancePicksP2 = g.state.lancePicks.p2;
+  // USE SPLICE to maintain references in case buildLanceBuilderUI closures are holding them
+  if (g.state?.lancePicks?.p1) {
+    lancePicksP1.splice(0, lancePicksP1.length, ...g.state.lancePicks.p1);
+  }
+  if (g.state?.lancePicks?.p2) {
+    lancePicksP2.splice(0, lancePicksP2.length, ...g.state.lancePicks.p2);
+  }
 
-  // Rebuild lance UI if we just claimed a seat (myPlayer changed)
-  if (myPlayer !== null && myPlayer !== prevMyPlayer) {
+  // Always rebuild lance UI if we are in a seat to ensure we show the latest server/local state
+  if (myPlayer !== null) {
     buildLanceBuilderUI();
-  } else if (myPlayer !== null) {
-    // Just refresh the budget display in case opponent changes pushed an update
-    updateLanceBudgetDisplay();
   }
 
   const makeRow = (slot, pid, name, color, picks) => {
@@ -1187,7 +1264,7 @@ async function renderWaiting() {
         : '';
     // Lance summary line
     let lanceSummary = '';
-    if (pid && picks && picks.length === 3) {
+    if (pid && picks && picks.length >= LANCE_MIN) {
       const cost = lanceCost(picks);
       const labels = picks.map(k => LANCE_CHASSIS[k]?.label ?? k).join(' · ');
       const budgetOk = cost <= LANCE_BUDGET;
@@ -1978,7 +2055,7 @@ function resetPlanUI() {
   enemyPlanSubmitted = false;
   fireOrders         = [];
   moveHistory        = {};
-  selectedWeapon     = null;
+  selectedWeapons    = [];
   hoveredEnemy       = null;
   mechs.forEach(m => m.mpSpent = 0);
   updatePlanBar();
@@ -2052,11 +2129,16 @@ function loadStateFromGame(state) {
 }
 
 function loadStateFromDB(gameRow) {
-  if (gameRow.state) loadStateFromGame(gameRow.state);
+  if (gameRow.state) {
+    startStateCache = gameRow.state;
+    loadStateFromGame(gameRow.state);
+  }
   if (gameRow.turn_number) turnNumber = gameRow.turn_number;
   myPlayer = gameRow.p1_id === currentUser.id ? 1
            : gameRow.p2_id === currentUser.id ? 2 : null;
   isHost   = gameRow.host_id === currentUser.id;
+  // If both seats are the same ID, it's a VS AI match
+  vsAiMode = (gameRow.p1_id && gameRow.p1_id === gameRow.p2_id);
 }
 
 // ── ENTER GAME ────────────────────────────────────────────────────
@@ -2100,10 +2182,14 @@ async function tryRejoin(savedId) {
     if (g.status === 'active') {
       if (g.phase === 'planning') {
         // Game is already past deployment — go straight to planning
-        if (g.state) loadStateFromGame(g.state);
+        if (g.state) {
+          startStateCache = g.state;
+          loadStateFromGame(g.state);
+        }
         enterGame();
         enterPlanningPhase();
       } else {
+        if (g.state) startStateCache = g.state;
         enterGame();  // back to deployment
       }
       return true;
@@ -2225,6 +2311,7 @@ let mTriKey= null;
 let hovVert= null;
 let currentPath = null;  // A* path as array of vertKeys when in move mode
 let ox = 0, oy = 0;
+let lastMousePos = { x:0, y:0 };
 // map pan via middle-mouse drag
 let isPanning = false, panStartX = 0, panStartY = 0, panOx = 0, panOy = 0;
 // deployment phase state
@@ -2234,8 +2321,9 @@ let fireOrders = [];
 // move history for undo: map of mechId → stack of {wx, wy, mpSpent, facing} snapshots
 let moveHistory = {};  // cleared each turn by resetPlanUI
 // weapon picker state
-let selectedWeapon     = null;   // weaponKey string currently selected in the picker
+let selectedWeapons     = [];     // weaponKey strings currently selected in the picker
 let hoveredEnemy       = null;   // mech being hovered in fire mode (for live TN preview)
+let weaponLabelsHover  = localStorage.getItem('if_wp_hover') !== '0'; // default true
 let selectedTerrainType = 'woods_light';  // terrain type currently selected in editor
 let selectedElevationMode = false;        // true = painting elevation, false = painting terrain type
 let selectedElevationLevel = 1;          // 0=LOW 1=MID 2=HIGH — level to paint
@@ -2274,9 +2362,21 @@ function applyDisplaySettings() {
   // Text size — base font size drives all em-based measurements
   const scale = uiTextSize / 100;
   document.body.style.fontSize = (10 * scale) + 'px';
+
+  // Weapon labels hover
+  const wpCheck = document.getElementById('sett-wp-hover');
+  if (wpCheck) wpCheck.checked = weaponLabelsHover;
+
   document.documentElement.style.setProperty('--log-size', (10 * scale) + 'px');
   const sizeLbl = document.getElementById('sett-size-lbl');
   if (sizeLbl) sizeLbl.textContent = uiTextSize + '%';
+}
+
+function toggleWeaponLabelsHover() {
+  weaponLabelsHover = !weaponLabelsHover;
+  localStorage.setItem('if_wp_hover', weaponLabelsHover ? '1' : '0');
+  applyDisplaySettings();
+  draw();
 }
 
 function setTheme(theme) {
@@ -3357,9 +3457,18 @@ function draw() {
 
 function drawFireOrders() {
   if (!fireOrders.length) return;
+
+  // Group by (attacker, target) pair to prevent label overlap
+  const groups = new Map();
   fireOrders.forEach(fo => {
-    const att = mechs.find(m => m.id === fo.attacker_id);
-    const tgt = mechs.find(m => m.id === fo.target_id);
+    const key = `${fo.attacker_id}_${fo.target_id}`;
+    if (!groups.has(key)) groups.set(key, { attId: fo.attacker_id, tgtId: fo.target_id, weapons: [] });
+    groups.get(key).weapons.push(fo.weapon);
+  });
+
+  groups.forEach(group => {
+    const att = mechs.find(m => m.id === group.attId);
+    const tgt = mechs.find(m => m.id === group.tgtId);
     if (!att || !tgt) return;
 
     const { x: ax, y: ay } = w2c(att.wx, att.wy);
@@ -3367,15 +3476,13 @@ function drawFireOrders() {
 
     // Dashed red line attacker → target
     ctx.beginPath();
-    ctx.moveTo(ax, ay);
-    ctx.lineTo(tx, ty);
+    ctx.moveTo(ax, ay); ctx.lineTo(tx, ty);
     ctx.strokeStyle = 'rgba(255,102,68,0.7)';
     ctx.lineWidth   = 1.5;
     ctx.setLineDash([5, 3]);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.stroke(); ctx.setLineDash([]);
 
-    // Small arrowhead at target end
+    // Arrowhead at target
     const angle = Math.atan2(ty - ay, tx - ax);
     const aLen  = 8;
     ctx.beginPath();
@@ -3387,12 +3494,25 @@ function drawFireOrders() {
     ctx.lineWidth   = 1.5;
     ctx.stroke();
 
-    // Weapon label near midpoint
-    const mx = (ax + tx) / 2, my = (ay + ty) / 2;
-    ctx.font      = '9px Share Tech Mono';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#ff6644';
-    ctx.fillText(WEAPONS[fo.weapon]?.label ?? fo.weapon, mx, my - 7);
+    // Labels at midpoint — only show if not in "hover mode" OR if attacker is hovered
+    const nmHover = mechs.reduce((b, m) => {
+      const {x:mx, y:my} = w2c(m.wx, m.wy);
+      const d = Math.hypot(mx - lastMousePos.x, my - lastMousePos.y);
+      return (!b || d < b.d) ? { m, d } : b;
+    }, null);
+    const isHoveringAttacker = nmHover && nmHover.m.id === att.id && nmHover.d < OUTLINE_R * 0.7;
+
+    if (!weaponLabelsHover || isHoveringAttacker) {
+      const mx = (ax + tx) / 2, my = (ay + ty) / 2;
+      ctx.font      = '9px Share Tech Mono';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ff6644';
+      
+      group.weapons.forEach((wKey, idx) => {
+        const label = WEAPONS[wKey]?.label ?? wKey;
+        ctx.fillText(label, mx, my - 7 - (idx * 11));
+      });
+    }
   });
 }
 
@@ -3647,6 +3767,44 @@ function drawFacingCones() {
         : (isSel ? 'rgba(255,68,68,0.92)'  : 'rgba(255,68,68,0.55)');
       const label = isSel ? `${mech.name} · ${mech.pilotName ?? ''}` : (mech.pilotName ?? mech.name);
       ctx.fillText(label, cx, labelY);
+    }
+
+    // ── HP/HEAT BARS ON TOKEN ──────────────────────────────────────
+    if (!mech.destroyed) {
+      const barW = 24, barH = 2;
+      const bx = cx - barW/2, by = cy + OUTLINE_R + 2;
+      
+      const armour    = mech.armour    ?? MECH_CLASSES[mech.cls]?.baseArmour;
+      const structure = mech.structure ?? MECH_CLASSES[mech.cls]?.baseStructure;
+      const baseArm   = MECH_CLASSES[mech.cls]?.baseArmour;
+      const baseStr   = MECH_CLASSES[mech.cls]?.baseStructure;
+      const totalArm  = Object.values(armour || {}).reduce((a,b)=>a+b,0);
+      const totalStr  = Object.values(structure || {}).reduce((a,b)=>a+b,0);
+      const maxArm    = Object.values(baseArm || {x:1}).reduce((a,b)=>a+b,0);
+      const maxStr    = Object.values(baseStr || {x:1}).reduce((a,b)=>a+b,0);
+      
+      const armPct = Math.max(0, totalArm / maxArm);
+      const strPct = Math.max(0, totalStr / maxStr);
+      const heat   = mech.heat ?? 0;
+      const hCap   = mechHeatCap(mech);
+      const hPct   = Math.min(1, heat / hCap);
+
+      // Armour bar (Green/Amber/Red)
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(bx, by, barW, barH);
+      ctx.fillStyle = armPct > 0.5 ? '#00cc66' : armPct > 0.25 ? '#ffaa00' : '#ff4444';
+      ctx.fillRect(bx, by, barW * armPct, barH);
+      
+      // Structure bar (Dark Red)
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(bx, by + barH + 1, barW, barH);
+      ctx.fillStyle = '#aa3333';
+      ctx.fillRect(bx, by + barH + 1, barW * strPct, barH);
+
+      // Heat bar (Blue/Orange)
+      if (hPct > 0.2) {
+        ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(bx, by + (barH+1)*2, barW, 1.5);
+        ctx.fillStyle = hPct > 0.75 ? '#ff6600' : hPct > 0.5 ? '#ffaa00' : '#3399ff';
+        ctx.fillRect(bx, by + (barH+1)*2, barW * hPct, 1.5);
+      }
     }
 
     // Elevation badge — small ▲ indicator when mech is on elevated ground
@@ -3904,7 +4062,7 @@ function setMode(m) {
   if (btn) btn.classList.add('on');
   document.getElementById('hmode').textContent = m.toUpperCase();
   if (m === 'los') { losId = selId; }
-  if (m !== 'fire') { selectedWeapon = null; hoveredEnemy = null; }
+  if (m !== 'fire') { selectedWeapons = []; hoveredEnemy = null; }
   const hints = {
     select:  'Click a unit to select it',
     move:    'Click any vertex (amber dot) to move',
@@ -3921,11 +4079,11 @@ function setMode(m) {
 function selMech(id) {
   selId = id;
   if (mode === 'los') losId = id;
-  // In fire mode: keep selectedWeapon if it's valid for this mech, else clear
+  // In fire mode: keep selectedWeapons if it's valid for this mech, else clear
   if (mode === 'fire') {
     const m = mechs.find(x => x.id === id);
     const validWeapons = MECH_CLASSES[m?.cls]?.weapons ?? [];
-    if (!validWeapons.includes(selectedWeapon)) selectedWeapon = null;
+    selectedWeapons = selectedWeapons.filter(wk => validWeapons.includes(wk));
   }
   updatePanel(); buildRoster(); updateWeaponPicker(null); draw();
 }
@@ -3990,19 +4148,14 @@ function updateWeaponPicker(hovEnemy) {
     return;
   }
 
-  // Show hovered enemy name at top, or current selected weapon's assigned target
-  const selWeaponOrder = selectedWeapon
-    ? fireOrders.find(fo => fo.attacker_id === attacker.id && fo.weapon === selectedWeapon)
-    : null;
-  const previewTarget = hovEnemy
-    ?? (selWeaponOrder ? mechs.find(m => m.id === selWeaponOrder.target_id) : null);
-
-  if (previewTarget) {
-    targetEl.textContent = '\u2192 ' + previewTarget.name;
-  } else if (selectedWeapon) {
-    targetEl.textContent = WEAPONS[selectedWeapon]?.label + ' selected \u2014 click enemy';
+  // Show hovered enemy name at top, or current selected weapons' targets
+  const anySel = selectedWeapons.length > 0;
+  if (hovEnemy) {
+    targetEl.textContent = '\u2192 ' + hovEnemy.name;
+  } else if (anySel) {
+    targetEl.textContent = selectedWeapons.length + ' weapons selected \u2014 click enemy';
   } else {
-    targetEl.textContent = '\u2014 select weapon, then click enemy \u2014';
+    targetEl.textContent = '\u2014 select weapon(s), then click enemy \u2014';
   }
 
   // Build weapon buttons — one per weapon, showing assigned target if any
@@ -4024,9 +4177,9 @@ function updateWeaponPicker(hovEnemy) {
     const disabled    = mechWeaponDisabled(attacker, wKey);
     const thisOrder   = fireOrders.find(fo => fo.attacker_id === attacker.id && fo.weapon === wKey);
     const assignedTgt = thisOrder ? mechs.find(m => m.id === thisOrder.target_id) : null;
-    const tn          = (!disabled && previewTarget) ? calcToHit(attacker, previewTarget, w) : null;
-    const impossible  = !disabled && tn === null && previewTarget !== null;
-    const isSel       = selectedWeapon === wKey && !disabled;
+    const tn          = (!disabled && hovEnemy) ? calcToHit(attacker, hovEnemy, w) : null;
+    const impossible  = !disabled && tn === null && hovEnemy !== null;
+    const isSel       = selectedWeapons.includes(wKey) && !disabled;
 
     const btn = document.createElement('button');
     btn.className = 'wp-btn' + (isSel ? ' sel' : '') + (disabled ? ' disabled-weapon' : '');
@@ -4035,10 +4188,10 @@ function updateWeaponPicker(hovEnemy) {
     let tnStr = '', tnCls = '';
     if (disabled) {
       tnStr = 'OFFLINE'; tnCls = 'bad';
-    } else if (assignedTgt && !previewTarget) {
+    } else if (assignedTgt && !hovEnemy) {
       // Show assigned target when not hovering
       tnStr = '\u2192 ' + assignedTgt.name; tnCls = 'ok';
-    } else if (previewTarget) {
+    } else if (hovEnemy) {
       if (tn === null) { tnStr = 'NO SHOT'; tnCls = 'bad'; }
       else { tnStr = 'TN:' + tn; tnCls = tn <= 10 ? 'ok' : tn <= 14 ? '' : 'bad'; }
     }
@@ -4064,7 +4217,9 @@ function updateWeaponPicker(hovEnemy) {
 
     if (!disabled) {
       btn.onclick = () => {
-        selectedWeapon = (selectedWeapon === wKey) ? null : wKey;
+        const idx = selectedWeapons.indexOf(wKey);
+        if (idx >= 0) selectedWeapons.splice(idx, 1);
+        else selectedWeapons.push(wKey);
         updateWeaponPicker(hovEnemy);
       };
     }
@@ -4073,14 +4228,12 @@ function updateWeaponPicker(hovEnemy) {
 
   // Hint text
   const totalOrders = fireOrders.filter(fo => fo.attacker_id === attacker.id).length;
-  if (!selectedWeapon) {
+  if (selectedWeapons.length === 0) {
     hintEl.textContent = totalOrders > 0
       ? totalOrders + ' weapon' + (totalOrders > 1 ? 's' : '') + ' assigned \u2014 right-click to cancel one'
-      : 'select a weapon, then click an enemy';
-  } else if (selWeaponOrder) {
-    hintEl.textContent = 'order set \u2014 click enemy to retarget, right-click mech to cancel';
+      : 'select weapon(s), then click an enemy';
   } else {
-    hintEl.textContent = WEAPONS[selectedWeapon]?.label + ' ready \u2014 click an enemy';
+    hintEl.textContent = selectedWeapons.length + ' weapons ready \u2014 click an enemy to volley';
   }
 
   clearEl.style.display = totalOrders > 0 ? '' : 'none';
@@ -4088,18 +4241,19 @@ function updateWeaponPicker(hovEnemy) {
 
 function clearFireOrder() {
   if (!selId) return;
-  if (selectedWeapon) {
-    // Clear only the selected weapon's order
+  if (selectedWeapons.length > 0) {
+    // Clear only the selected weapons' orders
     const before = fireOrders.length;
-    fireOrders = fireOrders.filter(fo => !(fo.attacker_id === selId && fo.weapon === selectedWeapon));
+    fireOrders = fireOrders.filter(fo => !(fo.attacker_id === selId && selectedWeapons.includes(fo.weapon)));
     if (fireOrders.length < before) {
-      addLog((mechs.find(m => m.id === selId)?.name ?? selId) + ': ' + (WEAPONS[selectedWeapon]?.label ?? selectedWeapon) + ' order cleared');
+      addLog((mechs.find(m => m.id === selId)?.name ?? selId) + ': selected weapon orders cleared');
     }
   } else {
     // Clear all orders for this mech
     fireOrders = fireOrders.filter(fo => fo.attacker_id !== selId);
     addLog((mechs.find(m => m.id === selId)?.name ?? selId) + ': all fire orders cleared');
   }
+  selectedWeapons = [];
   updateWeaponPicker(null);
   buildRoster(); draw();
 }
@@ -4456,8 +4610,11 @@ function buildRoster() {
       img.style.cssText = 'border-radius:50%;border:1px solid ' + color + ';opacity:' + (dimmed ? '0.3' : '0.9') + ';display:block;';
       avatarSlot.appendChild(img);
     }
-    if (!isMine || mech.destroyed) { c.style.opacity = mech.destroyed ? '' : '0.35'; c.style.cursor = 'default'; }
-    else { c.onclick = () => selMech(mech.id); }
+    if (mech.destroyed) { c.style.opacity = '0.4'; c.style.cursor = 'default'; }
+    else { 
+      if (!isMine) c.style.opacity = '0.7';
+      c.onclick = () => selMech(mech.id); 
+    }
     list.appendChild(c);
   });
 }
@@ -4496,19 +4653,18 @@ canvas.addEventListener('mousemove', e => {
     }
   }
 
-  // Fire mode: track which enemy is being hovered for live TN preview
+  // Track last mouse position for drawing logic (hover effects)
+  lastMousePos = { x: cx, y: cy };
+
   if (mode === 'fire') {
     const nm = mechs.reduce((b, m) => {
-      const d = Math.hypot(wx-m.wx, wy-m.wy);
+      const d = Math.hypot(wx - m.wx, wy - m.wy);
       return (!b || d < b.d) ? { m, d } : b;
     }, null);
-    const nearMech = nm && nm.d < OUTLINE_R * 0.55 ? nm.m : null;
-    const newHovEnemy = (nearMech && nearMech.player !== myPlayer && !nearMech.destroyed)
-      ? nearMech : null;
-    if ((newHovEnemy?.id ?? null) !== (hoveredEnemy?.id ?? null)) {
-      hoveredEnemy = newHovEnemy;
-      updateWeaponPicker(hoveredEnemy);
-    }
+    const nearMech = nm && nm.d < OUTLINE_R * 0.7 ? nm.m : null;
+    const isEnemy = nearMech && nearMech.player !== myPlayer && !nearMech.destroyed;
+    hoveredEnemy = isEnemy ? nearMech : null;
+    updateWeaponPicker(hoveredEnemy);
   }
 
   // Terrain mode: paint while dragging (left button held)
@@ -4524,17 +4680,70 @@ canvas.addEventListener('mousemove', e => {
     }
   }
 
-  const pathCost = (mode === 'move' && currentPath) ? currentPath.length - 1 : null;
-  const costStr  = pathCost !== null ? `  COST:${pathCost}` : '';
-  const curElev  = elevationTiles[mTriKey] ?? 0;
-  const elevStr  = curElev > 0 ? `  ▲${ELEVATION_LABELS[curElev]}` : '';
-  document.getElementById('rCur').textContent = `hex(${tri.q},${tri.r}) t[${tri.t}]${elevStr}${costStr}`;
+  // Mech Hover HUD
+  const nmHover = mechs.reduce((b, m) => {
+    const d = Math.hypot(wx - m.wx, wy - m.wy);
+    return (!b || d < b.d) ? { m, d } : b;
+  }, null);
+  const mHover = (nmHover && nmHover.d < OUTLINE_R * 0.7) ? nmHover.m : null;
+
   const tip = document.getElementById('tip');
-  tip.style.left = (cx+13)+'px'; tip.style.top = (cy-16)+'px';
+  tip.style.left = (cx + 15) + 'px';
+  tip.style.top = (cy - 15) + 'px';
   tip.style.display = 'block';
-  tip.textContent = pathCost !== null
-    ? `${tri.q},${tri.r}:${tri.t}${elevStr}  ·  ${pathCost} steps`
-    : `${tri.q},${tri.r}:${tri.t}${elevStr}`;
+  tip.classList.remove('mech-hud');
+
+  if (mHover) {
+    tip.classList.add('mech-hud');
+    const isEnemy = mHover.player !== myPlayer;
+    const pCol    = mHover.player === 1 ? '#00ff88' : '#ff4444';
+    
+    const armour    = mHover.armour    ?? MECH_CLASSES[mHover.cls]?.baseArmour;
+    const structure = mHover.structure ?? MECH_CLASSES[mHover.cls]?.baseStructure;
+    const baseArm   = MECH_CLASSES[mHover.cls]?.baseArmour;
+    const baseStr   = MECH_CLASSES[mHover.cls]?.baseStructure;
+    const totalArm  = Object.values(armour || {}).reduce((a,b)=>a+b,0);
+    const totalStr  = Object.values(structure || {}).reduce((a,b)=>a+b,0);
+    const maxArm    = Object.values(baseArm || {x:1}).reduce((a,b)=>a+b,0);
+    const maxStr    = Object.values(baseStr || {x:1}).reduce((a,b)=>a+b,0);
+    
+    const armPct = Math.max(0, totalArm / maxArm * 100);
+    const strPct = Math.max(0, totalStr / maxStr * 100);
+    const heatVal = mHover.heat ?? 0;
+    const heatCap = mechHeatCap(mHover);
+    const hPct    = Math.min(100, heatVal / heatCap * 100);
+    const hCol    = hPct > 75 ? '#ff6600' : hPct > 50 ? '#ffaa00' : '#3399ff';
+
+    tip.innerHTML = `
+      <div class="hud-title" style="color:${pCol}">
+        <span>${mHover.name}</span>
+        <span style="font-size:8px; opacity:0.7;">P${mHover.player}</span>
+      </div>
+      <div class="hud-row"><span>PILOT</span><span class="hud-val">${mHover.pilotName}</span></div>
+      <div class="hud-row"><span>CLASS</span><span class="hud-val">${mHover.cls.toUpperCase()}</span></div>
+      
+      <div class="hud-row" style="margin-top:6px;"><span>ARMOUR</span><span>${totalArm}/${maxArm}</span></div>
+      <div class="hud-bar-wrap"><div class="hud-bar-fill" style="width:${armPct}%; background:#00cc66;"></div></div>
+      
+      <div class="hud-row"><span>STRUCTURE</span><span>${totalStr}/${maxStr}</span></div>
+      <div class="hud-bar-wrap"><div class="hud-bar-fill" style="width:${strPct}%; background:#aa3333;"></div></div>
+      
+      <div class="hud-row"><span>HEAT</span><span style="color:${hCol}">${heatVal}/${heatCap}</span></div>
+      <div class="hud-bar-wrap"><div class="hud-bar-fill" style="width:${hPct}%; background:${hCol};"></div></div>
+      
+      <div style="font-size:7px; color:var(--dim); text-align:center; margin-top:4px; letter-spacing:1px;">
+        ${mHover.destroyed ? 'UNIT ELIMINATED' : isEnemy ? 'HOSTILE UNIT' : 'FRIENDLY UNIT'}
+      </div>
+    `;
+  } else {
+    const pathCost = (mode === 'move' && currentPath) ? currentPath.length - 1 : null;
+    const costStr  = pathCost !== null ? `  COST:${pathCost}` : '';
+    const curElev  = elevationTiles[mTriKey] ?? 0;
+    const elevStr  = curElev > 0 ? `  ▲${ELEVATION_LABELS[curElev]}` : '';
+    tip.textContent = pathCost !== null
+      ? `${tri.q},${tri.r}:${tri.t}${elevStr}  ·  ${pathCost} steps`
+      : `${tri.q},${tri.r}:${tri.t}${elevStr}`;
+  }
   draw();
 });
 canvas.addEventListener('mouseleave', () => {
