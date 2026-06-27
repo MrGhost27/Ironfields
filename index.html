@@ -849,7 +849,7 @@
 // ================================================================
 //  IRONFIELD  Phase 2 — Supabase multiplayer
 //
-//  Auth:     Supabase email/password (username@ironfield.game trick)
+//  Auth:     Supabase email/password (username@FreeGames.com trick)
 //  Lobby:    Create game / join by code
 //  Waiting:  2-seat claim system, realtime sync
 //  WeGo:     Both players submit turn plans → simultaneous resolution
@@ -965,7 +965,7 @@ async function doLogin() {
   if (!pass) { err.textContent = 'Enter your password.'; return; }
   btn.disabled = true; btn.textContent = 'SIGNING IN…';
   const { data, error } = await db.auth.signInWithPassword({
-    email: `${user}@thedeck.game`, password: pass
+    email: `${user}@FreeGames.com`, password: pass
   });
   btn.disabled = false; btn.textContent = 'SIGN IN';
   if (error) {
@@ -991,7 +991,7 @@ async function doRegister() {
   if (pass.length < 6)            { err.textContent = 'Password must be 6+ characters.'; return; }
   if (pass !== conf)              { err.textContent = 'Passwords do not match.'; return; }
   btn.disabled = true; btn.textContent = 'CREATING…';
-  const { data, error } = await db.auth.signUp({ email: `${user}@thedeck.game`, password: pass });
+  const { data, error } = await db.auth.signUp({ email: `${user}@FreeGames.com`, password: pass });
   if (error) {
     btn.disabled = false; btn.textContent = 'CREATE ACCOUNT';
     err.textContent = error.message.includes('already') ? 'That callsign is taken.' : error.message;
