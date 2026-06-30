@@ -1013,6 +1013,7 @@ function aiGeneratePlan() {
 
     let destWx = m.wx, destWy = m.wy, mpSpent = 0;
     let bestFacing = m.facing;
+    let visitedPath = null;
 
     if (closest) {
       const target = closest.mech;
@@ -1030,6 +1031,7 @@ function aiGeneratePlan() {
       if (currentDist > prefRange) {
         // Step toward enemy along vertex graph, spending up to mpAvail
         let wx = m.wx, wy = m.wy, spent = 0;
+        const visited = [{ wx, wy }];
         const path = astar(m.wx, m.wy, target.wx, target.wy, m.id);
         if (path && path.length > 1) {
           for (let step = 1; step < path.length; step++) {
@@ -1046,11 +1048,13 @@ function aiGeneratePlan() {
             );
             if (blocked) break;
             wx    = vPos.wx; wy = vPos.wy; spent += cost;
+            visited.push({ wx, wy });
             // Stop when we reach preferred range
             const newDist = hexDist({ wx, wy }, target);
             if (newDist <= prefRange) break;
           }
           destWx = wx; destWy = wy; mpSpent = spent;
+          visitedPath = visited.length > 1 ? visited : null;
         }
       }
     }
@@ -1060,7 +1064,8 @@ function aiGeneratePlan() {
       wx:           destWx,
       wy:           destWy,
       final_facing: bestFacing,
-      mp_spent:     mpSpent
+      mp_spent:     mpSpent,
+      path:         visitedPath
     });
 
     // ── FIRE: pick best weapon with a valid shot at closest enemy ──
@@ -1236,6 +1241,22 @@ async function checkBothPlansSubmitted() {
   }
 }
 
+// Stitch a mech's recorded move legs (moveHistory) into one continuous vertex path.
+// Used both for the post-submit log breakdown and for the rendered movement trail.
+// Returns null if the mech didn't move this turn (or only has a single-point "path").
+function buildMovePath(m) {
+  const legs = moveHistory[m.id] || [];
+  if (legs.length === 0) return null;
+  const full = [];
+  legs.forEach(leg => {
+    (leg.legPath || []).forEach(pt => {
+      const last = full[full.length - 1];
+      if (!last || last.wx !== pt.wx || last.wy !== pt.wy) full.push(pt);
+    });
+  });
+  return full.length > 1 ? full : null;
+}
+
 // ── TURN PLAN SUBMISSION ──────────────────────────────────────────
 async function submitPlan() {
   if (myPlanSubmitted) return;
@@ -1250,7 +1271,8 @@ async function submitPlan() {
       wx:           m.wx,
       wy:           m.wy,
       final_facing: m.facing,
-      mp_spent:     m.mpSpent
+      mp_spent:     m.mpSpent,
+      path:         buildMovePath(m)
     })),
     fire_orders: fireOrders.filter(fo =>
       myMechs.some(m => m.id === fo.attacker_id)
@@ -1267,6 +1289,21 @@ async function submitPlan() {
   myPlanId        = data.id;
   myPlanSubmitted = true;
   showSynced();
+
+  // Final-state summary — one line per mech, now that the plan is locked in
+  addLog('── PLAN SUBMITTED ──', 'ok');
+  myMechs.forEach(m => {
+    const legs = moveHistory[m.id] || [];
+    let moveStr = '';
+    if (legs.length === 1) {
+      moveStr = `, moved (MP:${m.mpSpent})`;
+    } else if (legs.length > 1) {
+      const costs = legs.map(l => l.legCost ?? 0).join('+');
+      moveStr = `, moved ${legs.length} legs [${costs}=${m.mpSpent}MP]`;
+    }
+    addLog(`${m.name}: facing ${m.facing}°${moveStr}`, 'ok');
+  });
+
   await logEvent('plan_submitted');
   updatePlanBar();
 
@@ -1281,7 +1318,7 @@ async function submitPlan() {
       submitted_at: new Date().toISOString(),
       mech_orders: myMechs.map(m => ({
         mech_id: m.id, wx: m.wx, wy: m.wy,
-        final_facing: m.facing, mp_spent: m.mpSpent
+        final_facing: m.facing, mp_spent: m.mpSpent, path: buildMovePath(m)
       })),
       fire_orders: fireOrders.filter(fo => myMechs.some(m => m.id === fo.attacker_id))
     };
@@ -1340,6 +1377,7 @@ async function resolveTurn(plans) {
       m.facing  = order.final_facing;
       // Record movement before resetting so combat modifiers can use it
       m.mpSpentLastTurn = order.mp_spent ?? m.mpSpent;
+      m.lastMovePath    = order.path || null;  // full route for trail rendering
       m.mpSpent = 0;
     });
   });
@@ -1568,6 +1606,7 @@ function captureState() {
       id: m.id, player: m.player, name: m.name, cls: m.cls,
       facing: m.facing, wx: m.wx, wy: m.wy, mpSpent: 0,
       mpSpentLastTurn: m.mpSpentLastTurn ?? 0,
+      lastMovePath:    m.lastMovePath    ?? null,
       destroyed:       m.destroyed       ?? false,
       armour:          m.armour          ?? { ...MECH_CLASSES[m.cls]?.baseArmour    },
       structure:       m.structure       ?? { ...MECH_CLASSES[m.cls]?.baseStructure },
@@ -1600,6 +1639,7 @@ function loadStateFromGame(state) {
       wy:              saved.wy              ?? 0,
       mpSpent:         saved.mpSpent         ?? 0,
       mpSpentLastTurn: saved.mpSpentLastTurn ?? 0,
+      lastMovePath:    saved.lastMovePath    ?? null,
       destroyed:       saved.destroyed       ?? false,
       armour:          saved.armour          ?? { ...cls.baseArmour    },
       structure:       saved.structure       ?? { ...cls.baseStructure },
@@ -2917,6 +2957,7 @@ function draw() {
   if (flags.tri) drawTriGrid();
   drawCoverage();
   if (flags.out) drawOutlines();
+  drawMovementTrails();
   drawFacingCones();
   if (flags.verts) drawVertices();
   if (mode === 'move' && selId) drawMoveTargets();
@@ -3136,6 +3177,42 @@ function drawOutlines() {
     ctx.lineWidth = isSel ? 2 : 1;
     ctx.setLineDash(isSel ? [] : [4, 3]);
     ctx.stroke(); ctx.setLineDash([]);
+  });
+}
+
+// Draws the route each mech actually took last turn (full multi-leg path),
+// as a faded dashed trail with a start dot and an arrowhead at the final position.
+function drawMovementTrails() {
+  mechs.forEach(mech => {
+    const path = mech.lastMovePath;
+    if (!path || path.length < 2 || mech.destroyed) return;
+    const col = mech.player === 1 ? '0,255,136' : '255,68,68';
+
+    ctx.beginPath();
+    path.forEach((pt, i) => {
+      const { x: cx, y: cy } = w2c(pt.wx, pt.wy);
+      i === 0 ? ctx.moveTo(cx, cy) : ctx.lineTo(cx, cy);
+    });
+    ctx.strokeStyle = `rgba(${col},0.45)`;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([3, 4]);
+    ctx.stroke(); ctx.setLineDash([]);
+
+    // Start dot
+    const start = path[0];
+    const { x: sx, y: sy } = w2c(start.wx, start.wy);
+    ctx.beginPath(); ctx.arc(sx, sy, 3, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${col},0.5)`; ctx.fill();
+
+    // Arrowhead at the final position
+    const end = path[path.length - 1], prev = path[path.length - 2];
+    const { x: ex, y: ey } = w2c(end.wx, end.wy);
+    const { x: px, y: py } = w2c(prev.wx, prev.wy);
+    const angle = Math.atan2(ey - py, ex - px), aLen = 7;
+    ctx.beginPath();
+    ctx.moveTo(ex, ey); ctx.lineTo(ex - aLen*Math.cos(angle-0.4), ey - aLen*Math.sin(angle-0.4));
+    ctx.moveTo(ex, ey); ctx.lineTo(ex - aLen*Math.cos(angle+0.4), ey - aLen*Math.sin(angle+0.4));
+    ctx.strokeStyle = `rgba(${col},0.6)`; ctx.lineWidth = 1.5; ctx.stroke();
   });
 }
 
@@ -4303,13 +4380,17 @@ canvas.addEventListener('click', e => {
         addLog(`${m.name}: INSUFFICIENT MP (need ${cost}, have ${mpLeft})`, 'bad');
         return;
       }
+      // Full vertex path for this leg (for the movement trail + log breakdown later)
+      const legPath = currentPath
+        ? currentPath.map(k => { const v = vertByKey.get(k); return { wx: v.wx, wy: v.wy }; })
+        : [{ wx: m.wx, wy: m.wy }, { wx: hovVert.wx, wy: hovVert.wy }];
       // Save snapshot for undo before applying the move
       if (!moveHistory[m.id]) moveHistory[m.id] = [];
-      moveHistory[m.id].push({ wx: m.wx, wy: m.wy, mpSpent: m.mpSpent, facing: m.facing });
+      moveHistory[m.id].push({ wx: m.wx, wy: m.wy, mpSpent: m.mpSpent, facing: m.facing, legCost: cost, legPath });
       m.wx      = hovVert.wx;
       m.wy      = hovVert.wy;
       m.mpSpent += cost;
-      addLog(`${m.name} moved  COST:${cost}  MP:${mechMpLeft(m)}/${mechMpMax(m)} remaining`, 'ok');
+      // (no per-click log — full route is summarised once the plan is submitted)
       currentPath = null; hovVert = null;
       updatePanel(); buildRoster(); draw();
     }
@@ -4325,7 +4406,7 @@ canvas.addEventListener('click', e => {
       const canvasDeg = Math.atan2(wy - m.wy, wx - m.wx) * 180 / Math.PI;
       const northDeg  = canvasDeg + 90;   // convert east-zero to north-zero
       m.facing  = ((Math.round(northDeg / 30) * 30) % 360 + 360) % 360;
-      addLog(`${m.name} → ${m.facing}°`, 'ok');
+      // (no per-click log — final facing is summarised once the plan is submitted)
       updatePanel(); buildRoster(); draw();
     }
   }
@@ -4455,11 +4536,11 @@ document.addEventListener('keydown', e => {
     case 'q': case 'Q': case ',':
       if (m.player !== myPlayer) break;  // can't rotate enemy mechs
       m.facing = ((m.facing-30)+360)%360;
-      addLog(`${m.name} → ${m.facing}°`,'ok'); updatePanel(); buildRoster(); draw(); break;
+      updatePanel(); buildRoster(); draw(); break;
     case 'e': case 'E': case '.':
       if (m.player !== myPlayer) break;  // can't rotate enemy mechs
       m.facing = (m.facing+30)%360;
-      addLog(`${m.name} → ${m.facing}°`,'ok'); updatePanel(); buildRoster(); draw(); break;
+      updatePanel(); buildRoster(); draw(); break;
     case 's': setMode('select'); break;
     case 'm': setMode('move'); break;
     case 'r': setMode('rotate'); break;
