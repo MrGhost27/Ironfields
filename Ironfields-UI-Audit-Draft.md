@@ -1,6 +1,44 @@
 # Ironfields — UI Audit & Redesign Draft
 *Working document — v1*
 
+**Step 2 — Tier the existing controls — worked on: 2026-07-01**
+
+Implemented the §5.1 tiering without changing visual style, per the plan and the
+answers to §7's open questions:
+
+- **Toolbar trimmed from 12 buttons to 7**: SELECT / MOVE / ROTATE / LOS / FIRE /
+  OUTLINE / UNDO remain. Everything else was either relocated or removed.
+- **TRI GRID, HALF TRIS, VERTICES** moved out of the toolbar into a new
+  **// DEVELOPER** section in the settings cog panel, under a "DEBUG OVERLAYS"
+  row. Still call the same `togFlag()` function and respect the same default
+  states (`half`/`verts` on, `tri` off) — just relocated, not reworked.
+- **TERRAIN** button removed entirely from the live-match toolbar per your
+  answer in §7 (no map editor exists yet; map presets in the waiting room
+  already cover pre-match terrain setup). The underlying terrain-paint mode
+  code (`mode === 'terrain'`, `updateTerrainPanel()`, etc.) is left in place
+  but is no longer reachable — it was already effectively dead code, since
+  `updateTerrainPanel()` targets a `#wpanel` element that doesn't exist in the
+  current DOM, so it silently no-ops. Worth knowing if a real map-editor tool
+  gets built later: this code is a reasonable starting point, but currently
+  has no working UI regardless of toolbar access.
+- **NEW TURN** removed outright (button *and* function deleted), per your
+  answer — it bypassed `resolveTurn()` entirely and had no legitimate use in
+  the current WeGo flow.
+- **COVERAGE / CURSOR** readouts in the UNIT DATA panel are now hidden by
+  default (`.dev-only` class, `display:none`), toggled via a new
+  "SHOW COVERAGE / CURSOR" checkbox in the settings panel's DEVELOPER section.
+  Same DOM elements, same live-updating behaviour — just off by default so a
+  normal player never sees raw triangle counts or world coordinates.
+- Settings panel now has a `// DEVELOPER` divider separating player-facing
+  display settings (layout, theme, brightness, text size, combat feedback)
+  from dev/debug controls, so it's visually clear which section is which.
+
+**Net effect:** the always-visible toolbar+panel surface area is meaningfully
+smaller heading into the mobile work, without touching layout structure or
+visual style yet — that's still Step 3/4.
+
+---
+
 **Step 1 — UI Style Switcher infrastructure — worked on: 2026-07-01 08:42**
 
 ## 1. Purpose

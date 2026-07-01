@@ -80,6 +80,12 @@
   }
   /* ── LOG CONTROLS (kept for legacy, now hidden — settings panel replaces) */
   .log-controls { display:none; }
+  /* ── DEV-ONLY READOUTS ────────────────────────────────────────────
+     Raw internal state (COVERAGE tri counts, CURSOR world coords) —
+     no player-facing value. Hidden by default; toggled via the
+     settings cog's DEVELOPER section (toggleDevInfo() in index.html). */
+  .dev-only { display:none; }
+  .dev-only.show { display:block; }
   /* log text colours — legible on both dark and light themes */
   .le     { color: var(--txt) !important; }
   .le.ok  { color: var(--phd) !important; }

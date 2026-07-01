@@ -61,6 +61,27 @@
     </div>
   </div>
 
+  <div class="sett-row" style="border-top:1px solid var(--bdr);padding-top:10px;margin-top:2px;">
+    <div class="sett-label" style="color:var(--amb);">// DEVELOPER</div>
+  </div>
+
+  <div class="sett-row">
+    <div class="sett-label">DEBUG OVERLAYS</div>
+    <div class="sett-btns">
+      <button class="sett-btn" id="b-tg"   onclick="togFlag('tri')">TRI GRID</button>
+      <button class="sett-btn" id="b-half" onclick="togFlag('half')">HALF TRIS</button>
+      <button class="sett-btn" id="b-vx"   onclick="togFlag('verts')">VERTICES</button>
+    </div>
+  </div>
+
+  <div class="sett-row">
+    <div class="sett-label">RAW STATE READOUTS</div>
+    <div style="display:flex;align-items:center;gap:8px;cursor:pointer;" onclick="toggleDevInfo()">
+      <input type="checkbox" id="sett-dev-info" style="accent-color:var(--amb);cursor:pointer;">
+      <span style="font-size:8px;color:var(--txt);letter-spacing:1px;">SHOW COVERAGE / CURSOR</span>
+    </div>
+  </div>
+
   <div class="sett-row">
     <button class="sett-btn" onclick="resetDisplaySettings()" style="color:var(--dim);">RESET DEFAULTS</button>
   </div>
@@ -222,13 +243,8 @@
       <button class="tb amb" id="b-rot"  onclick="setMode('rotate')">[ ROTATE ]</button>
       <button class="tb los" id="b-los"  onclick="setMode('los')">[ LOS ]</button>
       <button class="tb fire" id="b-fire" onclick="setMode('fire')">[ FIRE ]</button>
-      <button class="tb" id="b-terrain" onclick="setMode('terrain')" style="color:#88ddff;border-color:#1e3344;">[ TERRAIN ]</button>
-      <button class="tb" id="b-undo" onclick="undoMove()" style="color:var(--amb);border-color:#332200;" title="Undo last move of selected mech">[ UNDO ]</button>
-      <button class="tb"     id="b-tg"   onclick="togFlag('tri')">[ TRI GRID ]</button>
       <button class="tb on"  id="b-out"  onclick="togFlag('out')">[ OUTLINE ]</button>
-      <button class="tb on"  id="b-half" onclick="togFlag('half')">[ HALF TRIS ]</button>
-      <button class="tb on"  id="b-vx"   onclick="togFlag('verts')">[ VERTICES ]</button>
-      <button class="tb" style="color:#88aaff;border-color:#1e2244;" onclick="newTurn()">[ NEW TURN ]</button>
+      <button class="tb" id="b-undo" onclick="undoMove()" style="color:var(--amb);border-color:#332200;" title="Undo last move of selected mech">[ UNDO ]</button>
     </div>
   </div>
 
@@ -239,7 +255,7 @@
     <div class="ib"><div class="lbl">PILOT</div><div class="coord" id="rPilot" style="font-size:9px;color:var(--dim);">—</div></div>
     <div class="ib"><div class="lbl">ANCHOR</div><div class="coord" id="rPos">—</div></div>
     <div class="ib"><div class="lbl">FACING</div><div class="fdisp" id="rF">—°</div></div>
-    <div class="ib"><div class="lbl">COVERAGE</div><div class="coord" id="rC">full:— half:—</div></div>
+    <div class="ib dev-only" id="ib-coverage"><div class="lbl">COVERAGE</div><div class="coord" id="rC">full:— half:—</div></div>
     <div class="mpbar-wrap">
       <div class="lbl">MOVEMENT POINTS</div>
       <div class="mpbar-row">
@@ -247,7 +263,7 @@
         <div class="mpbar-nums" id="mpNums">—</div>
       </div>
     </div>
-    <div class="ib"><div class="lbl">CURSOR</div><div class="coord" id="rCur">—</div></div>
+    <div class="ib dev-only" id="ib-cursor"><div class="lbl">CURSOR</div><div class="coord" id="rCur">—</div></div>
     <div class="wheel-wrap"><canvas id="wheel" width="76" height="76"></canvas></div>
     <div class="move-hint" id="mhint">Select a unit to begin</div>
     <div id="wpicker">
@@ -1879,6 +1895,8 @@ let uiTextSize   = parseInt(localStorage.getItem('if_textsize')   ?? '100', 10);
 // CSS exists for them yet, so they currently render identically to CLASSIC.
 // Later steps will add real rules under body[data-ui-layout="compact"] / ="mobile".
 let uiLayout     = localStorage.getItem('if_ui_layout')   ?? 'classic';
+// DEV INFO — shows/hides raw COVERAGE/CURSOR readouts (Tier 3 debug info).
+let uiDevInfo    = localStorage.getItem('if_dev_info')    === '1';
 
 // Legacy vars — kept so any lingering references don't throw
 let logFontSize = 10;
@@ -1919,6 +1937,19 @@ function applyDisplaySettings() {
   const wpCheck = document.getElementById('sett-wp-hover');
   if (wpCheck) wpCheck.checked = weaponLabelsHover;
 
+  // Dev info (COVERAGE / CURSOR readouts)
+  document.querySelectorAll('.dev-only').forEach(el => el.classList.toggle('show', uiDevInfo));
+  const devCheck = document.getElementById('sett-dev-info');
+  if (devCheck) devCheck.checked = uiDevInfo;
+
+  // Sync relocated debug-overlay toggle buttons (TRI GRID / HALF TRIS / VERTICES)
+  // with their current flags state — these default half:true, verts:true.
+  ['tg','half','vx'].forEach(id => {
+    const btn = document.getElementById(`b-${id}`);
+    const key = { tg:'tri', half:'half', vx:'verts' }[id];
+    if (btn) btn.classList.toggle('active', flags[key]);
+  });
+
   document.documentElement.style.setProperty('--log-size', (10 * scale) + 'px');
   const sizeLbl = document.getElementById('sett-size-lbl');
   if (sizeLbl) sizeLbl.textContent = uiTextSize + '%';
@@ -1929,6 +1960,12 @@ function toggleWeaponLabelsHover() {
   localStorage.setItem('if_wp_hover', weaponLabelsHover ? '1' : '0');
   applyDisplaySettings();
   draw();
+}
+
+function toggleDevInfo() {
+  uiDevInfo = !uiDevInfo;
+  localStorage.setItem('if_dev_info', uiDevInfo ? '1' : '0');
+  applyDisplaySettings();
 }
 
 function setUiLayout(layout) {
@@ -1957,11 +1994,12 @@ function adjustTextSize(delta) {
 }
 
 function resetDisplaySettings() {
-  uiTheme = 'dark'; uiBrightness = 100; uiTextSize = 100; uiLayout = 'classic';
+  uiTheme = 'dark'; uiBrightness = 100; uiTextSize = 100; uiLayout = 'classic'; uiDevInfo = false;
   localStorage.setItem('if_theme', uiTheme);
   localStorage.setItem('if_brightness', uiBrightness);
   localStorage.setItem('if_textsize', uiTextSize);
   localStorage.setItem('if_ui_layout', uiLayout);
+  localStorage.setItem('if_dev_info', '0');
   applyDisplaySettings();
 }
 
@@ -3608,19 +3646,15 @@ function drawWheel() {
 // ── UI ───────────────────────────────────────────────────────────
 let turnNumber = 1;
 
-function newTurn() {
-  turnNumber++;
-  mechs.forEach(m => { m.mpSpent = 0; });
-  addLog(`── TURN ${turnNumber} BEGINS  ·  ALL MP RESTORED ──`, 'ok');
-  document.getElementById('hmode').closest('.hstat').querySelector('b:last-of-type')
-    && (document.querySelector('#hfacing').textContent = `TURN ${turnNumber}`);
-  updatePanel(); buildRoster(); draw();
-}
-
 function togFlag(k) {
   flags[k] = !flags[k];
   const bmap = { tri:'tg', out:'out', half:'half', verts:'vx' };
-  document.getElementById(`b-${bmap[k]}`).classList.toggle('on', flags[k]);
+  const btn = document.getElementById(`b-${bmap[k]}`);
+  if (btn) {
+    // Toolbar buttons use .tb.on styling; relocated settings-panel buttons use .sett-btn.active
+    const activeClass = btn.classList.contains('sett-btn') ? 'active' : 'on';
+    btn.classList.toggle(activeClass, flags[k]);
+  }
   addLog(`${k}: ${flags[k]?'ON':'OFF'}`);
   draw();
 }
