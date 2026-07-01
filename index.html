@@ -21,6 +21,15 @@
   <div class="sett-title">// DISPLAY SETTINGS</div>
 
   <div class="sett-row">
+    <div class="sett-label">UI LAYOUT <span style="opacity:0.5;">(dev)</span></div>
+    <div class="sett-btns">
+      <button class="sett-btn" id="sett-layout-classic" onclick="setUiLayout('classic')">CLASSIC</button>
+      <button class="sett-btn" id="sett-layout-compact" onclick="setUiLayout('compact')">COMPACT</button>
+      <button class="sett-btn" id="sett-layout-mobile"  onclick="setUiLayout('mobile')">MOBILE</button>
+    </div>
+  </div>
+
+  <div class="sett-row">
     <div class="sett-label">THEME</div>
     <div class="sett-btns">
       <button class="sett-btn" id="sett-dark"  onclick="setTheme('dark')">🌙 DARK</button>
@@ -1865,6 +1874,11 @@ let settingsOpen = false;
 let uiTheme      = localStorage.getItem('if_theme')      ?? 'dark';
 let uiBrightness = parseInt(localStorage.getItem('if_brightness') ?? '100', 10);
 let uiTextSize   = parseInt(localStorage.getItem('if_textsize')   ?? '100', 10);
+// UI LAYOUT — dev comparison switcher. 'classic' | 'compact' | 'mobile'.
+// COMPACT and MOBILE are infrastructure-only right now (Step 1) — no layout-specific
+// CSS exists for them yet, so they currently render identically to CLASSIC.
+// Later steps will add real rules under body[data-ui-layout="compact"] / ="mobile".
+let uiLayout     = localStorage.getItem('if_ui_layout')   ?? 'classic';
 
 // Legacy vars — kept so any lingering references don't throw
 let logFontSize = 10;
@@ -1876,6 +1890,13 @@ function toggleSettings() {
 }
 
 function applyDisplaySettings() {
+  // UI Layout (dev switcher) — drives body[data-ui-layout="..."] CSS scoping
+  document.body.dataset.uiLayout = uiLayout;
+  ['classic','compact','mobile'].forEach(l => {
+    const btn = document.getElementById(`sett-layout-${l}`);
+    if (btn) btn.classList.toggle('active', uiLayout === l);
+  });
+
   // Theme
   document.body.classList.toggle('theme-light', uiTheme === 'light');
   const btnDark  = document.getElementById('sett-dark');
@@ -1910,6 +1931,13 @@ function toggleWeaponLabelsHover() {
   draw();
 }
 
+function setUiLayout(layout) {
+  uiLayout = layout;
+  localStorage.setItem('if_ui_layout', layout);
+  applyDisplaySettings();
+  addLog(`UI layout: ${layout.toUpperCase()}`, 'ok');
+}
+
 function setTheme(theme) {
   uiTheme = theme;
   localStorage.setItem('if_theme', theme);
@@ -1929,10 +1957,11 @@ function adjustTextSize(delta) {
 }
 
 function resetDisplaySettings() {
-  uiTheme = 'dark'; uiBrightness = 100; uiTextSize = 100;
+  uiTheme = 'dark'; uiBrightness = 100; uiTextSize = 100; uiLayout = 'classic';
   localStorage.setItem('if_theme', uiTheme);
   localStorage.setItem('if_brightness', uiBrightness);
   localStorage.setItem('if_textsize', uiTextSize);
+  localStorage.setItem('if_ui_layout', uiLayout);
   applyDisplaySettings();
 }
 
