@@ -230,21 +230,28 @@
     <!-- Map pan scrollbars -->
     <div class="map-hscroll"><input type="range" id="hscroll" min="0" max="1000" value="500" oninput="onHScroll()"></div>
     <div class="map-vscroll"><input type="range" id="vscroll" min="0" max="1000" value="500" oninput="onVScroll()"></div>
-    <!-- WeGo plan bar -->
-    <div class="planbar hidden" id="planbar">
-      <span>YOUR PLAN: <b id="planStatus">not submitted</b></span>
-      <span>OPPONENT: <b class="enem" id="enemStatus">waiting</b></span>
-      <button class="plan-btn" id="btnSubmit" onclick="submitPlan()">SUBMIT PLAN</button>
-      <button class="plan-btn recall hidden" id="btnRecall" onclick="recallPlan()">RECALL</button>
-    </div>
-    <div class="tbar" id="tbar">
-      <button class="tb on"  id="b-sel"  onclick="setMode('select')">[ SELECT ]</button>
-      <button class="tb"     id="b-move" onclick="setMode('move')">[ MOVE ]</button>
-      <button class="tb amb" id="b-rot"  onclick="setMode('rotate')">[ ROTATE ]</button>
-      <button class="tb los" id="b-los"  onclick="setMode('los')">[ LOS ]</button>
-      <button class="tb fire" id="b-fire" onclick="setMode('fire')">[ FIRE ]</button>
-      <button class="tb on"  id="b-out"  onclick="togFlag('out')">[ OUTLINE ]</button>
-      <button class="tb" id="b-undo" onclick="undoMove()" style="color:var(--amb);border-color:#332200;" title="Undo last move of selected mech">[ UNDO ]</button>
+    <!-- Bottom control strip — in CLASSIC layout this wrapper has no effect
+         (children keep their own absolute positioning against .carea, the
+         nearest positioned ancestor). In COMPACT layout, body[data-ui-layout="compact"]
+         turns this into a single flex strip merging the plan bar + toolbar. -->
+    <div id="bottomStrip">
+      <!-- WeGo plan bar -->
+      <div class="planbar hidden" id="planbar">
+        <span class="plan-text">YOUR PLAN: <b id="planStatus">not submitted</b></span>
+        <span class="plan-text">OPPONENT: <b class="enem" id="enemStatus">waiting</b></span>
+        <span class="plan-pill" id="planPill" title="Plan status"><span class="dot"></span>PLAN</span>
+        <button class="plan-btn" id="btnSubmit" onclick="submitPlan()">SUBMIT PLAN</button>
+        <button class="plan-btn recall hidden" id="btnRecall" onclick="recallPlan()">RECALL</button>
+      </div>
+      <div class="tbar" id="tbar">
+        <button class="tb on"  id="b-sel"  onclick="setMode('select')">[ SELECT ]</button>
+        <button class="tb"     id="b-move" onclick="setMode('move')">[ MOVE ]</button>
+        <button class="tb amb" id="b-rot"  onclick="setMode('rotate')">[ ROTATE ]</button>
+        <button class="tb los" id="b-los"  onclick="setMode('los')">[ LOS ]</button>
+        <button class="tb fire" id="b-fire" onclick="setMode('fire')">[ FIRE ]</button>
+        <button class="tb on"  id="b-out"  onclick="togFlag('out')">[ OUTLINE ]</button>
+        <button class="tb" id="b-undo" onclick="undoMove()" style="color:var(--amb);border-color:#332200;" title="Undo last move of selected mech">[ UNDO ]</button>
+      </div>
     </div>
   </div>
 
@@ -283,6 +290,16 @@
     </div>
     <div class="logarea" id="log"></div>
   </div>
+</div>
+
+<!-- ── MOBILE TAB BAR (Step 4) ─────────────────────────────────────
+     Hidden outside body[data-ui-layout="mobile"]. In mobile layout,
+     LANCE ROSTER / MAP / UNIT DATA become single full-screen panels
+     switched via these tabs instead of simultaneous flex columns. -->
+<div class="mobile-tabbar" id="mobileTabbar">
+  <button class="mtab active" data-panel="carea" onclick="setMobilePanel('carea')"><span class="micon">🗺</span>MAP</button>
+  <button class="mtab" data-panel="lpan" onclick="setMobilePanel('lpan')"><span class="micon">👥</span>ROSTER</button>
+  <button class="mtab" data-panel="rpan" onclick="setMobilePanel('rpan')"><span class="micon">📊</span>UNIT</button>
 </div>
 
 <script>
@@ -1600,6 +1617,31 @@ function updatePlanBar() {
   bsub.disabled  = myPlanSubmitted;
   brec.className = 'plan-btn recall' + (myPlanSubmitted ? '' : ' hidden');
   bar.className  = 'planbar' + (enemyPlanSubmitted ? ' enemy-waiting' : '');
+
+  // MOBILE layout — compact status pill (colour-coded dot) standing in for
+  // the two full status lines, which are hidden in that layout to save space.
+  const pill = document.getElementById('planPill');
+  if (pill) {
+    const dot = pill.querySelector('.dot');
+    const state = myPlanSubmitted && enemyPlanSubmitted ? 'resolving'
+                : myPlanSubmitted                        ? 'submitted'
+                : enemyPlanSubmitted                      ? 'enemy-ready'
+                                                            : 'waiting';
+    const colours = {
+      resolving:   'var(--ph)',
+      submitted:   'var(--amb)',
+      'enemy-ready': 'var(--amb)',
+      waiting:     'var(--dim)',
+    };
+    const titles = {
+      resolving:   'Both plans submitted — resolving turn',
+      submitted:   'Plan submitted — waiting on opponent',
+      'enemy-ready': 'Opponent ready — your plan not submitted yet',
+      waiting:     'Plan not submitted',
+    };
+    if (dot) dot.style.background = colours[state];
+    pill.title = titles[state];
+  }
 }
 
 function resetPlanUI() {
@@ -1835,6 +1877,7 @@ function resetMultiState() {
   // Reset mechs to empty — positions and classes come from DB on next enterGame
   mechs = [];
   selId = null;
+  expandedRosterCards = new Set();
   // Clear the activity log so previous game messages don't bleed in
   const logEl = document.getElementById('log');
   if (logEl) logEl.innerHTML = '';
@@ -1874,6 +1917,9 @@ let isPanning = false, panStartX = 0, panStartY = 0, panOx = 0, panOy = 0;
 let gamePhase = 'planning'; // 'deployment' | 'planning'
 // fire orders queued this planning phase: [{ attacker_id, target_id, weapon }]
 let fireOrders = [];
+// COMPACT layout only: which roster cards are user-expanded (default = all collapsed).
+// Set of mech ids. Has no effect in CLASSIC layout — .mc-extra is always visible there.
+let expandedRosterCards = new Set();
 // move history for undo: map of mechId → stack of {wx, wy, mpSpent, facing} snapshots
 let moveHistory = {};  // cleared each turn by resetPlanUI
 // weapon picker state
@@ -1897,6 +1943,9 @@ let uiTextSize   = parseInt(localStorage.getItem('if_textsize')   ?? '100', 10);
 let uiLayout     = localStorage.getItem('if_ui_layout')   ?? 'classic';
 // DEV INFO — shows/hides raw COVERAGE/CURSOR readouts (Tier 3 debug info).
 let uiDevInfo    = localStorage.getItem('if_dev_info')    === '1';
+// MOBILE layout only: which full-screen panel is active — 'carea' | 'lpan' | 'rpan'.
+// Not persisted — every session/layout switch starts back on the map.
+let mobilePanel  = 'carea';
 
 // Legacy vars — kept so any lingering references don't throw
 let logFontSize = 10;
@@ -1914,6 +1963,11 @@ function applyDisplaySettings() {
     const btn = document.getElementById(`sett-layout-${l}`);
     if (btn) btn.classList.toggle('active', uiLayout === l);
   });
+
+  // MOBILE layout — sync the active full-screen panel + tab bar highlight.
+  // (mobilePanel itself is only reset to 'carea' on layout switch, in setUiLayout.)
+  document.body.dataset.mobilePanel = mobilePanel;
+  document.querySelectorAll('.mtab').forEach(b => b.classList.toggle('active', b.dataset.panel === mobilePanel));
 
   // Theme
   document.body.classList.toggle('theme-light', uiTheme === 'light');
@@ -1968,9 +2022,20 @@ function toggleDevInfo() {
   applyDisplaySettings();
 }
 
+// MOBILE layout only — switch which full-screen panel is showing
+// (map / roster / unit data), driven by the persistent tab bar.
+function setMobilePanel(panel) {
+  mobilePanel = panel;
+  document.body.dataset.mobilePanel = panel;
+  document.querySelectorAll('.mtab').forEach(b => b.classList.toggle('active', b.dataset.panel === panel));
+  // Canvas dimensions can go stale while .carea was display:none — resync on return.
+  if (panel === 'carea') requestAnimationFrame(resize);
+}
+
 function setUiLayout(layout) {
   uiLayout = layout;
   localStorage.setItem('if_ui_layout', layout);
+  if (layout === 'mobile') mobilePanel = 'carea';  // always land on the map when entering mobile
   applyDisplaySettings();
   addLog(`UI layout: ${layout.toUpperCase()}`, 'ok');
 }
@@ -4090,6 +4155,16 @@ function drawPilotAvatar(mechX, mechY, radius, pilotName, playerColor) {
   img.src = url;
 }
 
+// COMPACT layout only — expand/collapse a roster card's armour grid + weapons
+// list. stopPropagation so the click doesn't also fire the card's own
+// onclick (which selects the mech).
+function toggleRosterCard(id, ev) {
+  if (ev) ev.stopPropagation();
+  if (expandedRosterCards.has(id)) expandedRosterCards.delete(id);
+  else expandedRosterCards.add(id);
+  buildRoster();
+}
+
 function buildRoster() {
   const list = document.getElementById('mlist');
   list.innerHTML = '';
@@ -4224,22 +4299,26 @@ function buildRoster() {
 
     // Build card HTML — avatar injected via DOM after innerHTML set (avoids data-URL in template)
     const mechCol = isP1 ? '#00ff88' : '#ff4444';
+    const isExpanded = expandedRosterCards.has(mech.id);
     const inner = '<div class="mc-header" style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">' +
         '<div class="mc-avatar" data-pilot="' + (mech.pilotName ?? '') + '" data-color="' + mechCol + '" data-destroyed="' + (mech.destroyed ? '1' : '0') + '" style="width:28px;height:28px;flex-shrink:0;"></div>' +
         '<div style="flex:1;min-width:0;">' +
           '<div class="mn">' + mech.name + '</div>' +
           pilotHtml +
         '</div>' +
+        '<button class="mc-expand-btn" title="Show/hide armour grid + weapons" onclick="toggleRosterCard(\'' + mech.id + '\', event)">' + (isExpanded ? '\u25be' : '\u25b8') + '</button>' +
       '</div>' +
       '<div class="ms">' +
         '<div class="sr"><span>CLASS</span><span class="v">' + (cls?.label ?? mech.cls) + '</span></div>' +
         '<div class="sr"><span>FACING</span><span class="v">' + mech.facing + '\u00b0</span></div>' +
         '<div class="sr"><span>MP</span><span class="v">' + mpLeft + '/' + mpMax + '</span></div>' +
-        pipHtml + hpHtml + statusHtml + fireHtml + armorGridHtml + weaponsHtml +
+        pipHtml + hpHtml + statusHtml + fireHtml +
+        '<div class="mc-extra">' + armorGridHtml + weaponsHtml + '</div>' +
       '</div>';
     const c = document.createElement('div');
     const destroyedCls = mech.destroyed ? 'destroyed' : '';
-    c.className = `mc ${isP1?'p1':'p2'} ${isSel?'sel':''} ${isTargeted?'fire-target':''} ${destroyedCls}`.trim();
+    const expandedCls  = isExpanded ? 'expanded' : '';
+    c.className = `mc ${isP1?'p1':'p2'} ${isSel?'sel':''} ${isTargeted?'fire-target':''} ${destroyedCls} ${expandedCls}`.trim();
     c.innerHTML = inner;
     // Inject pilot avatar image after innerHTML (avoids data-URL in template literal)
     const avatarSlot = c.querySelector('.mc-avatar');

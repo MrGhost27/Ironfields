@@ -1,6 +1,99 @@
 # Ironfields — UI Audit & Redesign Draft
 *Working document — v1*
 
+**Step 4 — "Mobile" layout variant — worked on: 2026-07-01**
+
+Implemented the §5.4 mobile layout direction, scoped under
+`body[data-ui-layout="mobile"]` — CLASSIC and COMPACT are untouched.
+
+- **Persistent tab bar.** New fixed bottom bar with three tabs — MAP /
+  ROSTER / UNIT — replacing the simultaneous three-column layout. Only one
+  of `.carea` / `.side` / `.rpan` renders at a time, driven by
+  `body[data-ui-layout="mobile"][data-mobile-panel="…"]`. Switching tabs is
+  handled by a new `setMobilePanel()` function; canvas dimensions are
+  re-synced via `resize()` whenever you switch back to MAP, since `.carea`
+  going `display:none` while off-screen can leave its size stale after a
+  resize/rotation.
+- **Canvas as the default view.** MAP is the tab you land on whenever you
+  switch into mobile layout (`setUiLayout('mobile')` resets
+  `mobilePanel` to `'carea'`). One interpretation note: §5.4 says the canvas
+  is the base layer "always" — I read the intent as *canvas is always the
+  default/anchor view*, and implemented ROSTER/UNIT as genuinely full-screen
+  (not a translucent overlay with the canvas visible underneath), matching
+  the literal "full-screen... overlays" wording later in the same bullet.
+  Flagging this in case you pictured something closer to a true overlay.
+- **Touch-sized Tier 1 action strip.** The toolbar buttons get larger
+  touch targets (46×46px minimum) in mobile, still only SELECT / MOVE /
+  ROTATE / LOS / FIRE / OUTLINE / UNDO from the Step 2 trim. Only shown on
+  the MAP tab, since the actions need the canvas to click against.
+- **Compact plan pill.** Added a small colour-coded status dot (`#planPill`)
+  next to the existing plan-bar markup — grey = not submitted, amber =
+  submitted/waiting on opponent, green = both in, resolving. In mobile the
+  verbose "YOUR PLAN: not submitted / OPPONENT: waiting…" text is hidden and
+  the pill + SUBMIT/RECALL buttons are what's shown. CLASSIC/COMPACT keep
+  the full text, unaffected.
+- **Header trimmed for phone width.** MODE and FACING readouts are hidden
+  (redundant with the active toolbar button + the UNIT tab), and the v2.7
+  dev tag is hidden — directly addressing the header wrap/truncation problem
+  from §4 ("PILOT: Dad1" getting cut off).
+- **Settings cog repositioned** slightly higher so it doesn't collide with
+  the new tab bar.
+
+**Known gap, called out on purpose, not fixed here:** switching to FIRE mode
+on the MAP tab doesn't auto-jump you to the UNIT tab where the weapon picker
+lives — you have to switch tabs manually mid-order. This is exactly the
+"touch-vs-hover interaction... tap-to-preview, tap-to-confirm" work §5.4
+explicitly flags as separate and out of scope for this step, so I left it
+alone rather than improvising a fix that isn't part of the agreed plan.
+
+**Net effect:** all four steps in §6's order of work are now done. Switching
+between CLASSIC / COMPACT / MOBILE via the settings cog should show a real,
+distinct layout at each setting, all on the same build, all still respecting
+the same underlying game logic. Mech token visual redesign and the
+touch-native interaction model are the two follow-ups flagged for separate
+docs.
+
+---
+
+**Step 3 — "Compact" PC layout variant — worked on: 2026-07-01**
+
+Implemented the §5.3 compact layout direction, scoped entirely under
+`body[data-ui-layout="compact"]` so CLASSIC is untouched — this is the payoff
+of building the Style Switcher in Step 1: nothing here is a rewrite, it's all
+additive CSS + a bit of JS gated on the layout attribute.
+
+- **Merged bottom control strip.** The plan bar and toolbar (`#planbar` and
+  `#tbar`) are now both children of a new `#bottomStrip` wrapper div. In
+  CLASSIC this wrapper is inert — the children keep their existing absolute
+  positioning against `.carea` (the wrapper itself establishes no new
+  positioning context, so nothing changes visually). In COMPACT,
+  `#bottomStrip` becomes a flex row pinned to the bottom centre, and the two
+  bars go `position: static` and lay out side-by-side as one strip instead of
+  floating independently top-centre / bottom-centre.
+- **Collapsible roster cards.** Each card in the LANCE ROSTER now has a small
+  ▸/▾ expand toggle in its header. In COMPACT layout, cards default to
+  collapsed — showing name, pilot line, class, facing, MP, and the ARM/STR/HT
+  bars, exactly what's needed to plan a turn at a glance. The full 8-cell
+  armour grid and weapons list are hidden until you click the toggle to
+  expand that specific card (tracked per-mech in `expandedRosterCards`, reset
+  each new match). In CLASSIC, `.mc-extra` has no `display:none` rule applied
+  to it, so cards render fully expanded exactly as before — the toggle button
+  itself is also CSS-hidden outside compact mode so it doesn't clutter
+  CLASSIC at all.
+- **One deviation worth flagging:** §7 says a collapsed card should show "mech
+  name, armour, structure, and heat." I kept CLASS/FACING/MP visible too,
+  since without a visible MP number you'd have to expand every card just to
+  plan movement, which defeats the point of collapsing. Only the armour grid
+  and weapons list — the two things §5.3 explicitly calls out as
+  expand-on-demand — are gated. Easy to trim further (e.g. also collapse the
+  pilot skill line or MP pips) if you want a denser default.
+
+**Net effect:** switching to COMPACT via the settings cog now visibly does
+something — bottom strip merges, roster cards shrink to essentials. Still no
+changes to CLASSIC's appearance or behaviour. Mobile layout (Step 4) is next.
+
+---
+
 **Step 2 — Tier the existing controls — worked on: 2026-07-01**
 
 Implemented the §5.1 tiering without changing visual style, per the plan and the

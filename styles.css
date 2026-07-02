@@ -23,8 +23,119 @@
     background: rgba(8,16,10,0.85); border: 1px solid var(--amb);
     padding: 3px 7px; pointer-events: none; text-transform: uppercase;
   }
-  /* body[data-ui-layout="compact"] { }  — Step 3 rules go here */
-  /* body[data-ui-layout="mobile"]  { }  — Step 4 rules go here */
+  /* ── COMPACT LAYOUT (Step 3) ─────────────────────────────────────
+     1) Merges the plan bar + toolbar into a single bottom control strip
+        instead of two independently-floating bars competing for space.
+     2) Roster cards collapse to name / class / facing / MP / HP bars by
+        default, with a click-to-expand toggle revealing the full 8-cell
+        armour grid and weapons list. CLASSIC is unaffected — .mc-extra
+        and .mc-expand-btn only change behaviour under this data attr. */
+  body[data-ui-layout="compact"] #bottomStrip {
+    position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px; z-index: 20;
+  }
+  body[data-ui-layout="compact"] #bottomStrip .planbar,
+  body[data-ui-layout="compact"] #bottomStrip .tbar {
+    position: static; top: auto; bottom: auto; left: auto; transform: none;
+  }
+  .mc-expand-btn {
+    display: none; /* only shown in compact layout */
+  }
+  body[data-ui-layout="compact"] .mc-expand-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; flex-shrink: 0;
+    background: transparent; border: 1px solid var(--bdr); color: var(--dim);
+    font-size: 8px; cursor: pointer; transition: all .12s;
+  }
+  body[data-ui-layout="compact"] .mc-expand-btn:hover {
+    color: var(--ph); border-color: var(--phd);
+  }
+  body[data-ui-layout="compact"] .mc:not(.expanded) .mc-extra {
+    display: none;
+  }
+  /* ── MOBILE LAYOUT (Step 4) ──────────────────────────────────────
+     Canvas is the persistent default view. ROSTER and UNIT DATA become
+     full-screen panels swapped in via a persistent bottom tab bar rather
+     than rendering as simultaneous flex columns. Tier 1 actions become a
+     touch-sized icon strip; the plan bar collapses to a status pill.
+     Touch-native tap-to-preview interaction for MOVE/FIRE is explicitly
+     NOT part of this step (flagged separately in §5.4) — this is layout
+     only, same click-based interaction model as CLASSIC/COMPACT. */
+
+  /* Persistent tab bar — hidden outside mobile layout */
+  .mobile-tabbar { display:none; }
+  body[data-ui-layout="mobile"] .mobile-tabbar {
+    display:flex; position:fixed; left:0; right:0; bottom:0; z-index:960;
+    background:rgba(6,10,7,0.97); border-top:1px solid var(--bdr);
+    backdrop-filter:blur(8px);
+  }
+  body[data-ui-layout="mobile"] .mtab {
+    flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:2px; padding:8px 4px; min-height:54px;
+    background:transparent; border:none; border-right:1px solid var(--bdr);
+    color:var(--dim); font-family:'Share Tech Mono',monospace; font-size:8px;
+    letter-spacing:1px; cursor:pointer; transition:color .12s;
+  }
+  body[data-ui-layout="mobile"] .mtab:last-child { border-right:none; }
+  body[data-ui-layout="mobile"] .mtab .micon { font-size:18px; line-height:1; }
+  body[data-ui-layout="mobile"] .mtab.active { color:var(--ph); }
+
+  /* Single-panel full-screen stacking — only the active tab's panel renders */
+  body[data-ui-layout="mobile"] .main { position:relative; padding-bottom:56px; }
+  body[data-ui-layout="mobile"] .side,
+  body[data-ui-layout="mobile"] .rpan,
+  body[data-ui-layout="mobile"] .carea {
+    display:none;
+    position:absolute; inset:0;
+    width:100% !important; min-width:0 !important; max-width:none !important;
+  }
+  body[data-ui-layout="mobile"][data-mobile-panel="carea"] .carea { display:block; }
+  body[data-ui-layout="mobile"][data-mobile-panel="lpan"]  .side  { display:flex; }
+  body[data-ui-layout="mobile"][data-mobile-panel="rpan"]  .rpan  { display:flex; }
+  /* Drag-resize handles are meaningless on a full-screen single panel */
+  body[data-ui-layout="mobile"] #rpan-resizer,
+  body[data-ui-layout="mobile"] #lpan-resizer { display:none; }
+
+  /* Tier 1 action strip — touch-sized, map-tab only */
+  body[data-ui-layout="mobile"] #bottomStrip { display:none; }
+  body[data-ui-layout="mobile"][data-mobile-panel="carea"] #bottomStrip {
+    display:flex; flex-direction:column; align-items:center; gap:6px;
+    position:absolute; left:0; right:0; bottom:8px; top:auto; transform:none; z-index:20;
+  }
+  body[data-ui-layout="mobile"] #bottomStrip .tbar {
+    position:static; display:flex; flex-wrap:wrap; justify-content:center;
+    gap:5px; max-width:94vw;
+  }
+  body[data-ui-layout="mobile"] #bottomStrip .tb {
+    min-width:46px; min-height:46px; padding:8px 10px; font-size:11px;
+  }
+
+  /* Compact plan pill — replaces the two full status lines to save space */
+  body[data-ui-layout="mobile"] #bottomStrip .planbar {
+    position:static; padding:6px 10px; gap:10px;
+  }
+  body[data-ui-layout="mobile"] #bottomStrip .planbar .plan-text { display:none; }
+  body[data-ui-layout="mobile"] #bottomStrip .plan-btn { min-height:40px; padding:8px 14px; }
+  .plan-pill { display:none; }
+  body[data-ui-layout="mobile"] #bottomStrip .plan-pill {
+    display:flex; align-items:center; gap:5px;
+    font-size:8px; letter-spacing:1px; color:var(--dim);
+  }
+  body[data-ui-layout="mobile"] #bottomStrip .plan-pill .dot {
+    width:8px; height:8px; border-radius:50%; background:var(--dim); transition:background .15s;
+  }
+
+  /* Header — trim to what fits a phone width; MODE/FACING are redundant
+     with the toolbar highlight + UNIT DATA tab, v2.7 tag is dev-only info */
+  body[data-ui-layout="mobile"] header { flex-wrap:wrap; row-gap:4px; padding:6px 10px; }
+  body[data-ui-layout="mobile"] .hstat { font-size:8px; gap:10px; }
+  body[data-ui-layout="mobile"] .hstat div:nth-child(2),
+  body[data-ui-layout="mobile"] .hstat div:nth-child(3) { display:none; }
+  body[data-ui-layout="mobile"] .userbar [title="Build version"] { display:none; }
+
+  /* Settings cog/panel sit above the tab bar instead of colliding with it */
+  body[data-ui-layout="mobile"] #settings-cog   { bottom:62px; }
+  body[data-ui-layout="mobile"] #settings-panel { bottom:104px; }
 
   /* ── LIGHT THEME ─────────────────────────────────────────────── */
   body.theme-light {
